@@ -1,38 +1,30 @@
-[workspace]
-members = ["tensile/core", "tensile/ping_pong", "tensile/qpe"]
-resolver = "2"
+[package]
+name = "reactor"
+version = "0.1.0"
 
-[workspace.package]
-rust-version = "1.85"
+rust-version = "1.86"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Satyam Jay"]
-repository = "https://github.com/rust-lang/rust-analyzer"
 
-
-[workspace.lints.rust]
-
-[workspace.lints.clippy]
-
-[workspace.dependencies]
+[dependencies]
 log = "0.4"
 tokio = { version = "1", features = ["full", "tracing"] }
 socket2 = "0.5.7"
 tokio-util = { version = "0.7", features = ["full"] }
-serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 bincode = { version = "2.0.0", features = ["serde"] }
 aquamarine = "0.6.0"
 float-ord = "0.3.2"
 hdrhistogram = { version = "7.5.4" }
 futures = "0.3"
+anyhow = "1.0"
+tarpc = { version = "0.36", features = ["tokio1"] }
+axum = "0.8.4"
+utoipa = {version="5.3.1", features=["axum_extras"]}
+utoipa-swagger-ui = { version = "9", features = ["axum"] }
+serde_json = "1.0"
 
 
-# [target.'cfg(doc)'.dependencies]
-# your-docs-dep = "1.2.3"
-
-[workspace.metadata]
-cargo-config = { rustflags = ["--cfg", "tokio_unstable"] }
-
-[workspace.features]
+[features]
 instrument = []

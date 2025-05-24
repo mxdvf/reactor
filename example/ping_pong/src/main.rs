@@ -11,7 +11,7 @@
 use std::{sync::Arc, time::Duration};
 
 use bincode::{Decode, Encode};
-use tensile_core::{
+use reactor::{
     actor::{
         ActorAddr, ChannelAction, DecodeErr, Generator, Msg, RState, SState, State,
         common::sender_task,
@@ -159,7 +159,7 @@ pub async fn actor(
             max: Some(1),
         });
     }
-    tensile_core::actor::actor(
+    reactor::actor::actor(
         my_addr,
         generators,
         ChannelState::default(),
