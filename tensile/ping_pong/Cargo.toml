@@ -1,0 +1,20 @@
+[package]
+name = "ping_pong"
+version = "0.1.0"
+rust-version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+tensile-core = {path = "../core"}
+bincode = { version = "2.0.0", features=["serde"] }
+tokio.workspace = true
+tokio-util.workspace = true
+log.workspace = true
+env_logger = "0.11.8"
+
+
+[lints]
+workspace = true

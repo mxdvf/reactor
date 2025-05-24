@@ -1,0 +1,18 @@
+[package]
+name = "qpe"
+version = "0.1.0"
+rust-version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+tensile-core = {path = "../core"}
+bincode = { version = "2.0.0", features=["serde"] }
+tokio.workspace = true
+tokio-util.workspace = true
+
+
+[lints]
+workspace = true
