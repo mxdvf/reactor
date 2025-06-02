@@ -1,0 +1,32 @@
+[package]
+name = "reactor-node"
+version = "0.1.0"
+
+rust-version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+log.workspace = true
+tokio.workspace = true
+serde = { version = "1", features = ["derive"] }
+libloading = "0.8"
+axum = "0.8.4"
+utoipa = {version="5.3.1", features=["axum_extras"]}
+utoipa-swagger-ui = { version = "9", features = ["axum"] }
+serde_json = "1.0"
+cargo_toml = "0.22"
+tempfile = "3.20.0"
+reactor-actor = {path = "../actor" }
+# env_logger = "0.11"
+thiserror.workspace = true
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tower-http = { version = "0.6.4", features = ["trace"] }
+tracing-log = "0.2.0"
+tracing-shared = "0.1.5"
+
+
+[features]
+instrument = []

@@ -12,10 +12,7 @@ use tokio::{
 };
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 
-use crate::{
-    actor::ActorAddr,
-    node::{Connection, ControlReq},
-};
+use crate::{ActorAddr, Connection, ControlReq, Msg};
 
 use super::{ChannelAction, GState, RState, SState, State};
 
@@ -61,7 +58,7 @@ pub fn sender_task<M, C>(
     controller_tx: mpsc::Sender<ControlReq>,
 ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>
 where
-    M: Send + 'static,
+    M: Msg + 'static,
     C: Encoder<M> + 'static + Send,
 {
     // Common sender for both local and remote actor.
@@ -70,12 +67,16 @@ where
         mut rx: mpsc::UnboundedReceiver<M>,
         encoder: C,
     ) {
+        log::info!("[ACTOR] SubTx Started");
         let mut framed_writer = FramedWrite::new(tx, encoder);
         loop {
             if let Some(msg) = rx.recv().await {
-                if let Err(_) = framed_writer.send(msg).await {}
+                if framed_writer.send(msg).await.is_err() {
+                    break;
+                }
             }
         }
+        log::info!("[ACTOR] SubTx Ended");
     }
     Box::pin(async move {
         let (c_tx, c_rx) = tokio::sync::oneshot::channel();
@@ -95,6 +96,7 @@ where
                     }
                     Err(_) => {
                         tokio::time::sleep(Duration::from_millis(500)).await;
+                        todo!();
                     }
                 }
             },

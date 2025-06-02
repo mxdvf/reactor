@@ -1,0 +1,25 @@
+[package]
+name = "reactor-actor"
+version = "0.1.0"
+
+rust-version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+log.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+bincode.workspace = true
+futures.workspace = true
+socket2.workspace = true
+thiserror.workspace = true
+anyhow = "1.0.98"
+tracing = "0.1.41"
+tracing-subscriber = "0.3.19"
+tracing-shared = "0.1.5"
+
+
+[features]
+instrument = []

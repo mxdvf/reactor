@@ -1,0 +1,10 @@
+[package]
+name = "ping_pong_actor"
+version = "0.1.0"
+rust-version = "1.86"
+edition = "2024"
+
+[dependencies]
+ping_pong = {path = "/home/satyam/dev/reactor/examples/ping_pong"}
+tokio = { version = "1", features = ["full"] }
+reactor-node = { path = "/home/satyam/dev/reactor/node" }

@@ -1,0 +1,227 @@
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+
+use axum::{
+    Json, Router,
+    body::Bytes,
+    extract::{MatchedPath, State},
+    http::{HeaderMap, Request},
+    response::{IntoResponse, Response},
+    routing::post,
+};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use tokio::{net::lookup_host, sync::mpsc::UnboundedSender};
+use tower_http::{classify::ServerErrorsFailureClass, trace::TraceLayer};
+use tracing::{Span, info_span};
+use utoipa::{OpenApi, ToSchema};
+use utoipa_swagger_ui::SwaggerUi;
+
+use crate::JobControllerReq;
+
+#[derive(Clone)]
+struct AppState {
+    tx: UnboundedSender<JobControllerReq>,
+}
+
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
+pub(crate) struct SpawnArgs {
+    pub actor_name: String,
+    pub operator_name: String,
+}
+
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
+pub(crate) struct RemoteActorInfo {
+    pub name: String,
+    pub hostname: String,
+    pub port: u16,
+}
+
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
+pub(crate) struct RegistrationArgs {
+    pub op_name: String,
+    pub args: HashMap<String, Value>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/register_op",
+    request_body(
+        content = RegistrationArgs,
+        description = "Arguments to compile a operator",
+        content_type = "application/json"
+    ),
+    responses(
+        (status = 201, description = "Registration successful"),
+        (status = 400, description = "Registration Unsuccessful")
+    )
+)]
+async fn register_op(
+    State(state): State<Arc<AppState>>,
+    Json(reg_arg): Json<RegistrationArgs>,
+) -> impl IntoResponse {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    state
+        .clone()
+        .tx
+        .send(JobControllerReq::RegisterOp {
+            name: reg_arg.op_name,
+            args: reg_arg.args,
+            resp_tx: tx,
+        })
+        .unwrap();
+    let status = rx.await.unwrap();
+    assert!(status.is_some());
+
+    axum::http::StatusCode::CREATED
+}
+
+#[utoipa::path(
+    post,
+    path = "/start_actor",
+    request_body(
+        content = SpawnArgs,
+        description = "Actor arguments as arbitrary JSON",
+        content_type = "application/json"
+    ),
+    responses(
+        (status = 201, description = "Start a new actor", body = RemoteActorInfo)
+    )
+)]
+async fn start_actor(
+    State(state): State<Arc<AppState>>,
+    Json(args): Json<SpawnArgs>,
+) -> impl IntoResponse {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    state
+        .clone()
+        .tx
+        .send(JobControllerReq::SpawnActor {
+            addr: args.actor_name.clone().leak(),
+            resp_tx: tx,
+            op_name: args.operator_name,
+        })
+        .unwrap();
+    let status = rx.await.unwrap();
+    assert!(status.is_some());
+
+    let detail = RemoteActorInfo {
+        name: args.actor_name,
+        hostname: "".to_string(),
+        port: status.unwrap().port,
+    };
+    (axum::http::StatusCode::CREATED, Json(detail))
+}
+
+#[utoipa::path(
+    post,
+    path = "/actor_added",
+    request_body(
+        content = RemoteActorInfo,
+        description = "Remote Actor Detail",
+        content_type = "application/json"
+    ),
+    responses(
+        (status = 201, description = "Notify actor start on remote")
+    )
+)]
+async fn actor_added(
+    State(state): State<Arc<AppState>>,
+    Json(actor_info): Json<RemoteActorInfo>,
+) -> impl IntoResponse {
+    let remote_ip = lookup_host(actor_info.hostname)
+        .await
+        .unwrap()
+        .next()
+        .unwrap()
+        .ip();
+    state
+        .clone()
+        .tx
+        .send(JobControllerReq::RemoteActorAdded {
+            addr: actor_info.name.leak(),
+            sock_addr: SocketAddr::new(remote_ip, actor_info.port),
+        })
+        .unwrap();
+    (axum::http::StatusCode::CREATED, "Actor added!")
+}
+
+#[utoipa::path(
+    post,
+    path = "/stop_all_actors",
+    responses(
+        (status = 200, description = "Actors stop initiated")
+    )
+)]
+async fn stop_all_actors(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    state
+        .clone()
+        .tx
+        .send(JobControllerReq::StopAllActors)
+        .unwrap();
+    (axum::http::StatusCode::OK, "Actors Stopped!")
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(start_actor, actor_added, register_op, stop_all_actors))]
+struct ApiDoc;
+
+pub async fn webserver(job_control_tx: UnboundedSender<JobControllerReq>, port: u16) {
+    // tracing_subscriber::registry()
+    //     .with(
+    //         tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+    //             // axum logs rejections from built-in extractors with the `axum::rejection`
+    //             // target, at `TRACE` level. `axum::rejection=trace` enables showing those events
+    //             format!(
+    //                 "{}=debug,tower_http=debug,axum::rejection=trace",
+    //                 env!("CARGO_CRATE_NAME")
+    //             )
+    //             .into()
+    //         }),
+    //     )
+    //     .with(tracing_subscriber::fmt::layer())
+    //     .init();
+    let state = Arc::new(AppState { tx: job_control_tx });
+    let app = Router::new()
+        .route("/start_actor", post(start_actor))
+        .route("/actor_added", post(actor_added))
+        .route("/register_op", post(register_op))
+        .route("/stop_all_actors", post(stop_all_actors))
+        .with_state(state)
+        .merge(SwaggerUi::new("/docs").url("/api-doc/openapi.json", ApiDoc::openapi()))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &Request<_>| {
+                    let matched_path = request
+                        .extensions()
+                        .get::<MatchedPath>()
+                        .map(MatchedPath::as_str);
+
+                    info_span!(
+                        "http_request",
+                        method = ?request.method(),
+                        matched_path,
+                        some_other_field = ?request.headers().get("user-agent"),
+                    )
+                })
+                .on_request(|request: &Request<_>, _span: &Span| {
+                    tracing::info!(method = ?request.method(), uri = %request.uri(), "received request");
+                })
+                .on_response(|response: &Response<_>, latency: Duration, _span: &Span| {
+                    tracing::info!(status = %response.status(), latency = ?latency, "sending response");
+                })
+                .on_body_chunk(|chunk: &Bytes, latency: Duration, _span: &Span| {
+                    tracing::debug!(size = chunk.len(), latency = ?latency, "sending body chunk");
+                })
+                .on_eos(|trailers: Option<&HeaderMap>, stream_duration: Duration, _span: &Span| {
+                    tracing::debug!(trailers = ?trailers, stream_duration = ?stream_duration, "stream closed");
+                })
+                .on_failure(|error: ServerErrorsFailureClass, latency: Duration, _span: &Span| {
+                    tracing::error!(error = ?error, latency = ?latency, "request failed");
+                }),
+        );
+
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
+        .await
+        .unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
