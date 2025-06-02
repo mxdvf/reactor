@@ -84,6 +84,12 @@ impl PingPongCodec {
         }
     }
 }
+impl Default for PingPongCodec {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl tokio_util::codec::Decoder for PingPongCodec {
     type Item = PingPongMsg;
     type Error = DecodeErr;

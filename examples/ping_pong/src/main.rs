@@ -72,7 +72,7 @@ struct PingPongCodeGen;
 impl CodeGenerator for PingPongCodeGen {
     fn generate(
         &self,
-        op_name: &str,
+        _op_name: &str,
         args: std::collections::HashMap<String, Value>,
     ) -> (String, String) {
         let template = LibTemplate {
@@ -118,7 +118,7 @@ async fn main() {
             (
                 "pinger".to_string(),
                 vec![PhysicalOp {
-                    logical: (&ops[0]).clone(),
+                    logical: (ops[0]).clone(),
                     nodename: "node1".to_string(),
                     actor_name: "pinger".to_string(),
                     idx: 0,
@@ -128,7 +128,7 @@ async fn main() {
             (
                 "ponger".to_string(),
                 vec![PhysicalOp {
-                    logical: (&ops[1]).clone(),
+                    logical: (ops[1]).clone(),
                     nodename: "node1".to_string(),
                     actor_name: "ponger".to_string(),
                     idx: 0,

@@ -7,6 +7,7 @@ pub enum RecieverErr {
     TcpStartErr(#[from] std::io::Error),
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Error, Debug)]
 pub enum ActorError {
     #[error("Generator couldn't send message to Processor")]

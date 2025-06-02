@@ -25,7 +25,7 @@ impl LibBuilder {
         let crate_type = cargo_manifest
             .lib
             .as_ref()
-            .ok_or_else(|| BuildError::InvalidCargoToml)?
+            .ok_or(BuildError::InvalidCargoToml)?
             .crate_type
             .clone();
         crate_type

@@ -16,7 +16,7 @@ impl Placement {
     pub fn iter(&self) -> impl Iterator<Item = Hostname> + '_ {
         self.hostname_to_num
             .iter()
-            .flat_map(|(hostname, &count)| iter::repeat(*hostname).take(count as usize))
+            .flat_map(|(hostname, &count)| iter::repeat_n(*hostname, count as usize))
     }
 }
 

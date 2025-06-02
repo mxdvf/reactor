@@ -7,7 +7,7 @@ pub trait CodeGenerator {
     ///
     /// Specification of the generated rust code:-
     /// 1. It must have the following function:-
-    /// `async fn actor_callback(mpsc::UnboundedReceiver<ControlInst>, mpsc::UnboundedSender<ControlReq>, &str)`
+    ///    `async fn actor_callback(mpsc::UnboundedReceiver<ControlInst>, mpsc::UnboundedSender<ControlReq>, &str)`
     /// 2. Generated Cargo.toml must generate the library as cdylib.
     ///
     /// # Parameters

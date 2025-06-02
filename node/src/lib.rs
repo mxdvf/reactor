@@ -37,9 +37,7 @@ pub(crate) struct SpawnResult {
 }
 
 #[derive(Debug)]
-pub(crate) struct RegisterResult {
-    name: String,
-}
+pub(crate) struct RegisterResult {}
 
 /// Global Controller
 pub(crate) enum JobControllerReq {
@@ -176,7 +174,7 @@ async fn handle_job_req<CG: CodeGenerator + Send>(
             let (code, deps) = code_gen.generate(&name, args);
             let lib = LibBuilder::build(code, deps).unwrap();
             op_lib.insert(name.clone(), lib);
-            resp_tx.send(Some(RegisterResult { name })).unwrap();
+            resp_tx.send(Some(RegisterResult {})).unwrap();
         }
         JobControllerReq::SpawnActor {
             addr,

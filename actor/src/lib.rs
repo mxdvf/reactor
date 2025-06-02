@@ -270,7 +270,7 @@ async fn parent_recv_subtask<M, C, D, AR, RX>(
                     break;
                 }
             }
-            if let Err(_) = row_q.send(R2PMsg::Msg(msg)) {
+            if row_q.send(R2PMsg::Msg(msg)).is_err() {
                 break;
             }
         }

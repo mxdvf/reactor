@@ -125,8 +125,9 @@ impl<PM: PlacementManager> JobController<PM> {
         &self,
         hostname: Hostname,
     ) -> reactor_client::apis::configuration::Configuration {
-        let mut config = reactor_client::apis::configuration::Configuration::default();
-        config.base_path = format!("http://{}:{}", hostname, 3000);
-        config
+        reactor_client::apis::configuration::Configuration {
+            base_path: format!("http://{}:{}", hostname, 3000),
+            ..Default::default()
+        }
     }
 }
