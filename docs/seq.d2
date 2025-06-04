@@ -1,0 +1,61 @@
+shape: sequence_diagram
+
+job_manger
+node1
+actor1
+actor2
+node2
+actor3
+
+initialization: {
+		job_manger -> node1: Register Node
+		job_manger -> node2: Register Node
+    job_manger -> node1: Register Lib
+    job_manger -> node2: Register Lib
+    job_manger -> node1: Start Actor1
+    job_manger -> node2: Notify Actor Started
+    job_manger -> node1: Start Actor2
+    job_manger -> node2: Notify Actor Started
+    job_manger -> node2: Start Actor3
+    job_manger -> node1: Notify Actor Started
+}
+
+actor1 sending message to actor2:{
+	actor1.t -> node1.t: Resolve actor2
+	actor2.t <- node1.t: Start Local Recv and give me send end.
+	actor2.t -> node1.t: Send End
+	actor1.t <- node1.t: Take the send end
+	actor1.t -> actor2.t: Send msg
+}
+
+actor1 sending message to actor3:{
+	actor1.t1 -> node1.t1: Resolve actor3
+	actor1.t1 <- node1.t1: Node TCPAddr
+	actor1.t1 -> actor3.t1: Connect
+	actor1.t1 -> actor3.t1: Send msg
+}
+
+job_manger.style: {
+	stroke: red
+  stroke-dash: 0
+}
+node1.style: {
+	stroke: blue
+  stroke-dash: 0
+}
+node2.style: {
+	stroke: blue
+  stroke-dash: 0
+}
+actor1.style: {
+	stroke: green
+  stroke-dash: 0
+}
+actor2.style: {
+	stroke: green
+  stroke-dash: 0
+}
+actor3.style: {
+	stroke: green
+  stroke-dash: 0
+}
