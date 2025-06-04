@@ -13,7 +13,9 @@ use serde_json::Value;
 use tokio::{net::lookup_host, sync::mpsc::UnboundedSender};
 use tower_http::{classify::ServerErrorsFailureClass, trace::TraceLayer};
 use tracing::{Span, info_span};
+#[cfg(feature = "swagger")]
 use utoipa::{OpenApi, ToSchema};
+#[cfg(feature = "swagger")]
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::JobControllerReq;
@@ -23,59 +25,71 @@ struct AppState {
     tx: UnboundedSender<JobControllerReq>,
 }
 
-#[derive(Serialize, Deserialize, ToSchema, Debug)]
+#[cfg_attr(feature = "swagger", derive(ToSchema))]
+#[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct SpawnArgs {
     pub actor_name: String,
     pub operator_name: String,
+    pub lib_name: String,
 }
 
-#[derive(Serialize, Deserialize, ToSchema, Debug)]
+#[cfg_attr(feature = "swagger", derive(ToSchema))]
+#[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct RemoteActorInfo {
     pub name: String,
     pub hostname: String,
     pub port: u16,
 }
 
-#[derive(Serialize, Deserialize, ToSchema, Debug)]
+#[cfg_attr(feature = "swagger", derive(ToSchema))]
+#[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct RegistrationArgs {
-    pub op_name: String,
+    pub lib_name: String,
     pub args: HashMap<String, Value>,
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "swagger", utoipa::path(
     post,
-    path = "/register_op",
+    path = "/register_lib",
     request_body(
         content = RegistrationArgs,
-        description = "Arguments to compile a operator",
+        description = "Arguments to compile an operator",
         content_type = "application/json"
     ),
     responses(
         (status = 201, description = "Registration successful"),
-        (status = 400, description = "Registration Unsuccessful")
+        (status = 400, description = "Registration Unsuccessful"),
+        (status = 501, description = "Registration Not Supported on this node")
     )
-)]
-async fn register_op(
-    State(state): State<Arc<AppState>>,
-    Json(reg_arg): Json<RegistrationArgs>,
+))]
+async fn register_lib(
+    State(_state): State<Arc<AppState>>,
+    Json(_reg_arg): Json<RegistrationArgs>,
 ) -> impl IntoResponse {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    state
-        .clone()
-        .tx
-        .send(JobControllerReq::RegisterOp {
-            name: reg_arg.op_name,
-            args: reg_arg.args,
-            resp_tx: tx,
-        })
-        .unwrap();
-    let status = rx.await.unwrap();
-    assert!(status.is_some());
+    #[cfg(feature = "dynop")]
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        _state
+            .clone()
+            .tx
+            .send(JobControllerReq::RegisterOps {
+                lib_name: _reg_arg.lib_name,
+                args: _reg_arg.args,
+                resp_tx: tx,
+            })
+            .unwrap();
+        let register_result = rx.await.unwrap();
+        assert!(register_result.is_some());
 
-    axum::http::StatusCode::CREATED
+        axum::http::StatusCode::CREATED
+    }
+    #[cfg(not(feature = "dynop"))]
+    {
+        axum::http::StatusCode::NOT_IMPLEMENTED
+    }
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "swagger", utoipa::path(
     post,
     path = "/start_actor",
     request_body(
@@ -86,7 +100,7 @@ async fn register_op(
     responses(
         (status = 201, description = "Start a new actor", body = RemoteActorInfo)
     )
-)]
+))]
 async fn start_actor(
     State(state): State<Arc<AppState>>,
     Json(args): Json<SpawnArgs>,
@@ -99,6 +113,7 @@ async fn start_actor(
             addr: args.actor_name.clone().leak(),
             resp_tx: tx,
             op_name: args.operator_name,
+            lib_name: args.lib_name,
         })
         .unwrap();
     let status = rx.await.unwrap();
@@ -112,7 +127,7 @@ async fn start_actor(
     (axum::http::StatusCode::CREATED, Json(detail))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature="swagger", utoipa::path(
     post,
     path = "/actor_added",
     request_body(
@@ -123,7 +138,7 @@ async fn start_actor(
     responses(
         (status = 201, description = "Notify actor start on remote")
     )
-)]
+))]
 async fn actor_added(
     State(state): State<Arc<AppState>>,
     Json(actor_info): Json<RemoteActorInfo>,
@@ -145,13 +160,13 @@ async fn actor_added(
     (axum::http::StatusCode::CREATED, "Actor added!")
 }
 
-#[utoipa::path(
+#[cfg_attr(feature="swagger", utoipa::path(
     post,
     path = "/stop_all_actors",
     responses(
         (status = 200, description = "Actors stop initiated")
     )
-)]
+))]
 async fn stop_all_actors(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     state
         .clone()
@@ -161,8 +176,9 @@ async fn stop_all_actors(State(state): State<Arc<AppState>>) -> impl IntoRespons
     (axum::http::StatusCode::OK, "Actors Stopped!")
 }
 
+#[cfg(feature = "swagger")]
 #[derive(OpenApi)]
-#[openapi(paths(start_actor, actor_added, register_op, stop_all_actors))]
+#[openapi(paths(start_actor, actor_added, register_lib, stop_all_actors))]
 struct ApiDoc;
 
 pub async fn webserver(job_control_tx: UnboundedSender<JobControllerReq>, port: u16) {
@@ -184,10 +200,9 @@ pub async fn webserver(job_control_tx: UnboundedSender<JobControllerReq>, port: 
     let app = Router::new()
         .route("/start_actor", post(start_actor))
         .route("/actor_added", post(actor_added))
-        .route("/register_op", post(register_op))
+        .route("/register_lib", post(register_lib))
         .route("/stop_all_actors", post(stop_all_actors))
         .with_state(state)
-        .merge(SwaggerUi::new("/docs").url("/api-doc/openapi.json", ApiDoc::openapi()))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &Request<_>| {
@@ -219,6 +234,9 @@ pub async fn webserver(job_control_tx: UnboundedSender<JobControllerReq>, port: 
                     tracing::error!(error = ?error, latency = ?latency, "request failed");
                 }),
         );
+
+    #[cfg(feature = "swagger")]
+    let app = app.merge(SwaggerUi::new("/docs").url("/api-doc/openapi.json", ApiDoc::openapi()));
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
         .await

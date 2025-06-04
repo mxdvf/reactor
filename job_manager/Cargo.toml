@@ -24,4 +24,6 @@ reactor-client = {path="../rpc_client"}
 
 
 [features]
+default = ["dynop"]
 instrument = []
+dynop = []

@@ -15,15 +15,15 @@ use serde::{Deserialize, Serialize};
 pub struct RegistrationArgs {
     #[serde(rename = "args")]
     pub args: std::collections::HashMap<String, serde_json::Value>,
-    #[serde(rename = "op_name")]
-    pub op_name: String,
+    #[serde(rename = "lib_name")]
+    pub lib_name: String,
 }
 
 impl RegistrationArgs {
-    pub fn new(args: std::collections::HashMap<String, serde_json::Value>, op_name: String) -> RegistrationArgs {
+    pub fn new(args: std::collections::HashMap<String, serde_json::Value>, lib_name: String) -> RegistrationArgs {
         RegistrationArgs {
             args,
-            op_name,
+            lib_name,
         }
     }
 }

@@ -18,3 +18,9 @@ reactor-node = { path = "../../node" }
 reactor-jobm = { path = "../../job_manager" }
 clap = { version = "4", features = ["derive"] }
 askama = { version = "0.14.0" }
+
+
+[features]
+default = []
+dynop = ["reactor-node/dynop", "reactor-jobm/dynop"]
+swagger = ["reactor-node/swagger"]

@@ -15,14 +15,17 @@ use serde::{Deserialize, Serialize};
 pub struct SpawnArgs {
     #[serde(rename = "actor_name")]
     pub actor_name: String,
+    #[serde(rename = "lib_name")]
+    pub lib_name: String,
     #[serde(rename = "operator_name")]
     pub operator_name: String,
 }
 
 impl SpawnArgs {
-    pub fn new(actor_name: String, operator_name: String) -> SpawnArgs {
+    pub fn new(actor_name: String, lib_name: String, operator_name: String) -> SpawnArgs {
         SpawnArgs {
             actor_name,
+            lib_name,
             operator_name,
         }
     }

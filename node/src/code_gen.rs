@@ -18,5 +18,5 @@ pub trait CodeGenerator {
     /// A tuple containing:
     /// - The generated code as a `String`.
     /// - Cargo.toml for the generated code.
-    fn generate(&self, op_name: &str, args: HashMap<String, Value>) -> (String, String);
+    fn generate(&self, args: HashMap<String, Value>) -> (String, String);
 }

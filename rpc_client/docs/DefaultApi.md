@@ -5,7 +5,7 @@ All URIs are relative to *http://localhost*
 Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**actor_added**](DefaultApi.md#actor_added) | **POST** /actor_added | 
-[**register_op**](DefaultApi.md#register_op) | **POST** /register_op | 
+[**register_lib**](DefaultApi.md#register_lib) | **POST** /register_lib | 
 [**start_actor**](DefaultApi.md#start_actor) | **POST** /start_actor | 
 [**stop_all_actors**](DefaultApi.md#stop_all_actors) | **POST** /stop_all_actors | 
 
@@ -39,9 +39,9 @@ No authorization required
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
 
-## register_op
+## register_lib
 
-> register_op(registration_args)
+> register_lib(registration_args)
 
 
 ### Parameters
@@ -49,7 +49,7 @@ No authorization required
 
 Name | Type | Description  | Required | Notes
 ------------- | ------------- | ------------- | ------------- | -------------
-**registration_args** | [**RegistrationArgs**](RegistrationArgs.md) | Arguments to compile a operator | [required] |
+**registration_args** | [**RegistrationArgs**](RegistrationArgs.md) | Arguments to compile an operator | [required] |
 
 ### Return type
 

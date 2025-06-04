@@ -1,7 +1,7 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use futures::future::join_all;
-use placement::{Hostname, LogicalOp, PhysicalOp, PlacementManager};
+use placement::{Hostname, LibInfo, LogicalOp, PhysicalOp, PlacementManager};
 use reactor_client::{
     self,
     models::{RemoteActorInfo, SpawnArgs},
@@ -12,21 +12,36 @@ pub mod placement;
 struct NodeHandle {
     client_config: reactor_client::apis::configuration::Configuration,
     actors: Vec<RemoteActorInfo>,
-    operators: Vec<LogicalOp>,
+    loaded_libs: Vec<String>,
 }
 
 impl NodeHandle {
-    async fn register_op(&mut self, op_info: &LogicalOp) {
-        reactor_client::apis::default_api::register_op(
+    // #[cfg(feature = "dynop")]
+    // async fn register_op(&mut self, op_info: &LogicalOp) {
+    //     reactor_client::apis::default_api::register_op(
+    //         &self.client_config,
+    //         reactor_client::models::RegistrationArgs {
+    //             args: op_info.compile_info.clone(),
+    //             lib: op_info.name.clone(),
+    //         },
+    //     )
+    //     .await
+    //     .unwrap();
+    //     self.operators.push(op_info.clone());
+    // }
+
+    #[cfg(feature = "dynop")]
+    async fn register_lib(&mut self, lib_info: &LibInfo) {
+        reactor_client::apis::default_api::register_lib(
             &self.client_config,
             reactor_client::models::RegistrationArgs {
-                args: op_info.compile_info.clone(),
-                op_name: op_info.name.clone(),
+                args: lib_info.compile_info.clone(),
+                lib_name: lib_info.name.clone(),
             },
         )
         .await
         .unwrap();
-        self.operators.push(op_info.clone());
+        self.loaded_libs.push(lib_info.name.clone());
     }
 
     async fn place(&mut self, physical_op: &PhysicalOp) -> RemoteActorInfo {
@@ -35,6 +50,7 @@ impl NodeHandle {
             SpawnArgs {
                 actor_name: physical_op.actor_name.clone(),
                 operator_name: physical_op.logical.name.clone(),
+                lib_name: physical_op.lib_name.clone(),
             },
         )
         .await
@@ -74,17 +90,18 @@ impl<PM: PlacementManager> JobController<PM> {
             NodeHandle {
                 client_config: self.client_config(hostname),
                 actors: Vec::new(),
-                operators: Vec::new(),
+                loaded_libs: Vec::new(),
             },
         );
     }
 
-    pub async fn register_op(&mut self, op_info: &LogicalOp, node_name: &str) {
+    #[cfg(feature = "dynop")]
+    pub async fn register_lib(&mut self, lib: &LibInfo, node_name: &str) {
         let node_handle = self
             .nodes
             .get_mut(node_name)
             .expect("Node must be register before placement");
-        node_handle.register_op(op_info).await;
+        node_handle.register_lib(lib).await;
     }
 
     pub async fn start_job(&mut self, ops: Vec<LogicalOp>) {
