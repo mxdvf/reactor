@@ -8,7 +8,7 @@ Yet Another Actor Framework in Rust.
 3. Job Manager
 
 ### Actor Design
-![Actor Design](docs/hld.svg)
+![Actor Design](docs/actor_design.svg)
 
 ### Node Design
 
