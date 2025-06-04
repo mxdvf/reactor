@@ -27,6 +27,7 @@ use tokio::{
 use std::collections::HashMap;
 
 pub mod code_gen;
+#[cfg(feature = "dynop")]
 mod lib_builder;
 mod rpc;
 use rpc::webserver;
@@ -46,6 +47,7 @@ pub(crate) struct SpawnResult {
     port: u16,
 }
 
+#[cfg(feature = "dynop")]
 #[derive(Debug)]
 pub(crate) struct RegisterResult {}
 

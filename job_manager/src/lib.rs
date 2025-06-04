@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use futures::future::join_all;
 use placement::{Hostname, LibInfo, LogicalOp, PhysicalOp, PlacementManager};

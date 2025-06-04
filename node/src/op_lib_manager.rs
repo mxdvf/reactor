@@ -15,6 +15,6 @@ impl OpLibrary {
     }
 
     pub(crate) fn get_lib(&self, lib_name: &str) -> &Library {
-        &self.container.get(lib_name).unwrap()
+        self.container.get(lib_name).unwrap()
     }
 }
