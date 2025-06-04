@@ -27,7 +27,7 @@ All URIs are relative to *http://localhost*
 Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
 *DefaultApi* | [**actor_added**](docs/DefaultApi.md#actor_added) | **POST** /actor_added | 
-*DefaultApi* | [**register_op**](docs/DefaultApi.md#register_op) | **POST** /register_op | 
+*DefaultApi* | [**register_lib**](docs/DefaultApi.md#register_lib) | **POST** /register_lib | 
 *DefaultApi* | [**start_actor**](docs/DefaultApi.md#start_actor) | **POST** /start_actor | 
 *DefaultApi* | [**stop_all_actors**](docs/DefaultApi.md#stop_all_actors) | **POST** /stop_all_actors | 
 

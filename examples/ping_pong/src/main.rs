@@ -11,11 +11,12 @@
 use askama::Template;
 use clap::{Parser, Subcommand, arg};
 use reactor_jobm::JobController;
-use reactor_jobm::placement::{LogicalOp, ManualPlacementManager, PhysicalOp};
+use reactor_jobm::placement::{LibInfo, LogicalOp, ManualPlacementManager, PhysicalOp};
 use reactor_node::code_gen::CodeGenerator;
 use reactor_node::node_controller;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::Duration;
 
 const CARGO_TOML: &str = r#"
@@ -53,31 +54,33 @@ lazy_static::lazy_static! {
 }
 
 #[unsafe(no_mangle)]
-pub extern \"C\" fn actor_callback(
+pub extern \"C\" fn pinger(
     inst_recv: mpsc::UnboundedReceiver<ControlInst>,
     req_send: mpsc::Sender<ControlReq>,
     actor_name: &'static str,
 ) {
-    RUNTIME.spawn(actor(inst_recv, req_send, actor_name, \"{{other}}\"));
+    RUNTIME.spawn(actor(inst_recv, req_send, actor_name, \"ponger\"));
 }
+
+#[unsafe(no_mangle)]
+pub extern \"C\" fn ponger(
+    inst_recv: mpsc::UnboundedReceiver<ControlInst>,
+    req_send: mpsc::Sender<ControlReq>,
+    actor_name: &'static str,
+) {
+    RUNTIME.spawn(actor(inst_recv, req_send, actor_name, \"pinger\"));
+}
+
 ",
     ext = "txt"
 )]
-struct LibTemplate<'a> {
-    other: &'a str,
-}
+struct LibTemplate {}
 
 struct PingPongCodeGen;
 
 impl CodeGenerator for PingPongCodeGen {
-    fn generate(
-        &self,
-        _op_name: &str,
-        args: std::collections::HashMap<String, Value>,
-    ) -> (String, String) {
-        let template = LibTemplate {
-            other: args.get("other").unwrap().as_str().unwrap(),
-        };
+    fn generate(&self, args: std::collections::HashMap<String, Value>) -> (String, String) {
+        let template = LibTemplate {};
         (template.render().expect(""), CARGO_TOML.to_string())
     }
 }
@@ -95,6 +98,8 @@ pub enum Commands {
     Node {
         #[arg(short, long)]
         port: u16,
+        #[cfg(not(feature = "dynop"))]
+        dir: PathBuf,
     },
     /// Run the job manager
     JobManager,
@@ -106,11 +111,9 @@ async fn main() {
     let ops = vec![
         LogicalOp {
             name: "pinger".to_string(),
-            compile_info: HashMap::from([("other".to_string(), Value::from("ponger"))]),
         },
         LogicalOp {
             name: "ponger".to_string(),
-            compile_info: HashMap::from([("other".to_string(), Value::from("pinger"))]),
         },
     ];
     let pm = ManualPlacementManager {
@@ -123,6 +126,7 @@ async fn main() {
                     actor_name: "pinger".to_string(),
                     idx: 0,
                     peers: 1,
+                    lib_name: "ping_pong".to_string(),
                 }],
             ),
             (
@@ -133,18 +137,28 @@ async fn main() {
                     actor_name: "ponger".to_string(),
                     idx: 0,
                     peers: 1,
+                    lib_name: "ping_pong".to_string(),
                 }],
             ),
         ]),
     };
+    let lib_info = LibInfo {
+        name: "ping_pong".to_string(),
+        compile_info: HashMap::new(),
+    };
     let cg = PingPongCodeGen {};
     match cli.command {
+        #[cfg(feature = "dynop")]
         Commands::Node { port } => node_controller(cg, port).await,
+        #[cfg(not(feature = "dynop"))]
+        Commands::Node { port, dir } => node_controller(port, dir).await,
         Commands::JobManager => {
             let mut gc = JobController::new(pm);
             gc.register_node("node1", "0.0.0.0");
-            gc.register_op(&ops[0], "node1").await;
-            gc.register_op(&ops[1], "node1").await;
+            #[cfg(feature = "dynop")]
+            {
+                gc.register_lib(&lib_info, "node1").await;
+            }
             gc.start_job(ops).await;
             tokio::time::sleep(Duration::from_secs(5)).await;
             gc.stop_job().await;

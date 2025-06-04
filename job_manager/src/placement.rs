@@ -21,9 +21,14 @@ impl Placement {
 }
 
 #[derive(Debug, Clone)]
-pub struct LogicalOp {
+pub struct LibInfo {
     pub name: String,
     pub compile_info: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LogicalOp {
+    pub name: String,
 }
 
 #[derive(Debug, Clone)]
@@ -31,6 +36,7 @@ pub struct PhysicalOp {
     pub logical: LogicalOp,
     pub nodename: String,
     pub actor_name: String,
+    pub lib_name: String,
     pub idx: u32,
     pub peers: u32,
 }

@@ -32,103 +32,117 @@ classes: {
   }
 }
 
+actor: "Actor"
+
 # Parents
-parent1: "Parent Actor1"
-parent2: "Parent Actor2"
+parent1: "Parent Actor1" {
+  shape: "diamond"
+}
+parent2: "Parent Actor2" {
+  shape: "diamond"
+}
 
 # Recv to Processor
-recv: "Receiver"
-gen: "Generators"
-gen.style.fill: "#f4a261"
+actor.recv: "Receiver"
+actor.gen: "Generators"
+actor.gen.style.fill: "#f4a261"
 
-proc_q: "Process Q"
-proc_q.shape: queue
+actor.proc_q: "Process Q"
+actor.proc_q.shape: queue
 
-recv.state: "Locked RState"
-recv.state.class: state
-recv.tasks
-recv.tasks.sub1: "Recv Sub Task1"
-recv.tasks.sub2: "Recv Sub Task2"
+actor.recv.state: "Locked RState"
+actor.recv.state.class: state
+actor.recv.tasks
+actor.recv.tasks.sub1: "Recv Sub Task1"
+actor.recv.tasks.sub2: "Recv Sub Task2"
 
-parent1 -> recv.tasks.sub1 {
+parent1 -> actor.recv.tasks.sub1 {
   class: in_edge
 }
-parent2 -> recv.tasks.sub2{
+parent2 ->actor.recv.tasks.sub2{
   class: in_edge
 }
 
-recv.tasks.sub1 <-> recv.state {
+actor.recv.tasks.sub1 <-> actor.recv.state {
   class: rw_edge
 }
-recv.tasks.sub2 <-> recv.state {
+actor.recv.tasks.sub2 <-> actor.recv.state {
   class: rw_edge
 }
 
-recv.tasks.sub1 -> proc_q{
+actor.recv.tasks.sub1 -> actor.proc_q{
   class: in_edge
 }
-recv.tasks.sub2 -> proc_q{
+actor.recv.tasks.sub2 -> actor.proc_q{
   class: in_edge
 }
-gen -> proc_q{
+actor.gen -> actor.proc_q{
   class: in_edge
 }
 
 # Processor to Send
-proc: "Processor"
-proc.state: "State"
-proc.state.class: state
-proc.fn: "f(I) -> O"
-proc.fn.shape: circle
-proc_q -> proc.fn {
+actor.proc: "Processor"
+actor.proc.state: "State"
+actor.proc.state.class: state
+actor.proc.fn: "f(I) -> O"
+actor.proc.fn.shape: circle
+actor.proc_q -> actor.proc.fn {
   class: in_edge
 }
-proc.fn -> send_q {
+actor.proc.fn -> actor.send_q {
   class: out_edge
 }
-proc.fn <-> proc.state {
+actor.proc.fn <-> actor.proc.state {
   class: rw_edge 
 }
-proc.fn.style.fill: "#f4a261"
+actor.proc.fn.style.fill: "#f4a261"
 
-send_q: "Send Q"
-send_q.shape: queue
+actor.send_q: "Send Q"
+actor.send_q.shape: queue
 
 # Send to Actor
-sender: "Sender"
-sender.state: "Sender State"
-sender.state.class: state
-sender.router: "Router"
-sender.router.style.fill: "#f4a261"
-send_q -> sender.router {
+actor.sender: "Sender"
+actor.sender.state: "Sender State"
+actor.sender.state.class: state
+actor.sender.router: "Router"
+actor.sender.router.style.fill: "#f4a261"
+actor.send_q -> actor.sender.router {
   class: out_edge
 }
-sender.router <-> sender.state{
+actor.sender.router <-> actor.sender.state{
   class: rw_edge
 }
 
-sender.send_buff1: "SendBuff1"
-sender.send_buff2: "SendBuff2"
-sender.send_buff1.shape: queue
-sender.send_buff2.shape: queue
-sender.router -> sender.send_buff1 {
+actor.sender.send_buff1: "SendBuff1"
+actor.sender.send_buff2: "SendBuff2"
+actor.sender.send_buff1.shape: queue
+actor.sender.send_buff2.shape: queue
+actor.sender.router -> actor.sender.send_buff1 {
   class: out_edge
 }
-sender.router -> sender.send_buff2{
+actor.sender.router -> actor.sender.send_buff2{
   class: out_edge
 }
-sender.sub1: "Sub Sender1"
-sender.sub2: "Sub Sender2"
-sender.send_buff1 -> sender.sub1{
+actor.sender.sub1: "Sub Sender1"
+actor.sender.sub2: "Sub Sender2"
+actor.sender.send_buff1 -> actor.sender.sub1{
   class: out_edge
 }
-sender.send_buff2 -> sender.sub2{
+actor.sender.send_buff2 -> actor.sender.sub2{
   class: out_edge
 }
 
-sender.sub1 -> Child1{
+actor.sender.sub1 -> child1{
   class: out_edge
 }
-sender.sub2 -> Child2{
+actor.sender.sub2 -> child2{
   class: out_edge
+}
+
+# Parents
+child1: "Child Actor1" {
+  shape: "diamond"
+}
+child2: "Child Actor2" {
+  shape: "diamond"
 }
