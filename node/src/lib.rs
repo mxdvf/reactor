@@ -2,20 +2,8 @@
 use core::panic;
 use op_lib_manager::OpLibrary;
 use reactor_actor::{Connection, ControlInst, ControlReq};
+use std::collections::HashMap;
 use std::net::SocketAddr;
-use tracing_shared::SharedLogger;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-#[cfg(feature = "dynop")]
-use code_gen::CodeGenerator;
-#[cfg(feature = "dynop")]
-use lib_builder::LibBuilder;
-#[cfg(feature = "dynop")]
-use serde_json::Value;
-
-#[cfg(not(feature = "dynop"))]
-use std::path::PathBuf;
-
 use tokio::{
     io::simplex,
     sync::{
@@ -23,15 +11,24 @@ use tokio::{
         oneshot,
     },
 };
+use tracing_shared::SharedLogger;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use std::collections::HashMap;
-
-pub mod code_gen;
 #[cfg(feature = "dynop")]
-mod lib_builder;
+use code_gen::CodeGenerator;
+#[cfg(feature = "dynop")]
+use lib_builder::LibBuilder;
+#[cfg(not(feature = "dynop"))]
+use std::path::PathBuf;
+
+#[cfg(feature = "dynop")]
+pub mod code_gen;
 mod rpc;
 use rpc::webserver;
 mod op_lib_manager;
+
+#[cfg(feature = "dynop")]
+mod lib_builder;
 
 pub type NodeAddr = &'static str;
 pub type ActorSpawnCB =
@@ -218,10 +215,6 @@ async fn handle_job_req(
     }
 }
 
-// //////////////////////////////////////////////////////////////////////////////////////////////////
-// /////////////////////////////////////// Dynamic OPerators ////////////////////////////////////////
-// //////////////////////////////////////////////////////////////////////////////////////////////////
-
 async fn handle_actor_req(
     req: ControlReq,
     local_actors: &HashMap<ActorAddr, LocalActor>,
@@ -247,6 +240,10 @@ async fn handle_actor_req(
         }
     }
 }
+
+// //////////////////////////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////// Dynamic OPerators ////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(feature = "dynop")]
 pub async fn node_controller<CG: CodeGenerator + Send + Sync + 'static>(code_gen: CG, port: u16) {

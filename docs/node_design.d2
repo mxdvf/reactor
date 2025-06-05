@@ -1,0 +1,35 @@
+# grid-rows: 3
+# grid-columns: 5
+# horizontal-gap: 10
+# vertical-gap: 5
+direction: down
+
+job_manager:{
+  shape: image
+  icon: https://icons.terrastruct.com/gcp%2FProducts%20and%20services%2FSecurity%2FCloud%20Resource%20Manager.svg
+}
+http_server: {
+  shape: image
+  icon: https://icons.terrastruct.com/aws%2F_Group%20Icons%2FServer-contents_light-bg.svg
+}
+op_library: {
+  shape: package
+}
+actor_controller:{
+  shape: image
+  icon: https://icons.terrastruct.com/aws%2FManagement%20&%20Governance%2FAWS-Control-Tower.svg
+}
+actor1: {
+  shape: oval
+}
+actor2: {
+  shape: oval
+}
+
+job_manager -> http_server
+actor1 <-> actor_controller
+actor2 <-> actor_controller
+http_server -> op_library: load
+http_server -> actor1: spawn
+http_server -> actor2: spawn
+

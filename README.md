@@ -3,18 +3,19 @@
 Yet Another Actor Framework in Rust.
 
 ## Components
-1. Actor
-2. Node
-3. Job Manager
 
-### Actor Design
-![Actor Design](docs/hld.svg)
-
-### Node Design
+### 1. Actor Design
+![Actor Design](docs/actor_design.svg)
 
 
-### Job Manager
+### 2. Node Design
+![Node Design](docs/node_design.svg)
 
 
-### Sequence Diagram
+### 3. Job Manager
+![Job Manager](docs/job_design.svg)
+
+
+## Sequence Diagram
 ![Seq Diagram](docs/seq.svg)
+
