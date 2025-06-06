@@ -4,7 +4,14 @@ version = "0.1.0"
 rust-version = "1.86"
 edition = "2024"
 
+[lib]
+name = "ping_pong_actor"
+crate-type = ["cdylib", "rlib"]
+
+
 [dependencies]
-ping_pong = {path = "/home/satyam/dev/reactor/examples/ping_pong"}
 tokio = { version = "1", features = ["full"] }
-reactor-node = { path = "/home/satyam/dev/reactor/node" }
+reactor-actor = { path = "../../actor" }
+ping_pong = { path = "../ping_pong" }
+lazy_static = "1.5.0"
+env_logger = "0.11"

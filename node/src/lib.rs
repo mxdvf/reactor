@@ -18,6 +18,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use code_gen::CodeGenerator;
 #[cfg(feature = "dynop")]
 use lib_builder::LibBuilder;
+#[cfg(feature = "dynop")]
+use serde_json::Value;
 #[cfg(not(feature = "dynop"))]
 use std::path::PathBuf;
 

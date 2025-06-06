@@ -1064,6 +1064,7 @@ dependencies = [
  "bincode",
  "clap",
  "env_logger",
+ "lazy_static",
  "reactor-actor",
  "reactor-jobm",
  "reactor-node",

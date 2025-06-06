@@ -1,12 +1,28 @@
+use lazy_static;
 use ping_pong::actor;
-use tokio::sync::{Mutex, mpsc};
-use reactor_node::ControlReq;
-use reactor_node::ControlInst;
+pub use reactor_actor::setup_shared_logger_ref;
+use reactor_actor::ControlInst;
+use reactor_actor::ControlReq;
+use tokio::sync::{mpsc, Mutex};
 
-async fn actor_callback(
+lazy_static::lazy_static! {
+    static ref RUNTIME: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn pinger(
     inst_recv: mpsc::UnboundedReceiver<ControlInst>,
     req_send: mpsc::Sender<ControlReq>,
     actor_name: &'static str,
 ) {
-    tokio::spawn(actor(inst_recv, req_send, actor_name, "ping"));
+    RUNTIME.spawn(actor(inst_recv, req_send, actor_name, "ponger"));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ponger(
+    inst_recv: mpsc::UnboundedReceiver<ControlInst>,
+    req_send: mpsc::Sender<ControlReq>,
+    actor_name: &'static str,
+) {
+    RUNTIME.spawn(actor(inst_recv, req_send, actor_name, "pinger"));
 }

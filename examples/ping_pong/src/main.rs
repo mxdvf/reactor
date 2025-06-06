@@ -12,6 +12,7 @@ use askama::Template;
 use clap::{Parser, Subcommand, arg};
 use reactor_jobm::JobController;
 use reactor_jobm::placement::{LibInfo, LogicalOp, ManualPlacementManager, PhysicalOp};
+#[cfg(feature="dynop")]
 use reactor_node::code_gen::CodeGenerator;
 use reactor_node::node_controller;
 use serde_json::Value;
@@ -21,7 +22,7 @@ use std::time::Duration;
 
 const CARGO_TOML: &str = r#"
 [package]
-name = "ping_pong_actor"
+name = "ping_pong_actor2"
 version = "0.1.0"
 rust-version = "1.86"
 edition = "2024"
@@ -32,9 +33,9 @@ crate-type = ["cdylib"]
 
 
 [dependencies]
-ping_pong = { path = "/home/satyam/dev/reactor/examples/ping_pong" }
 tokio = { version = "1", features = ["full"] }
 reactor-actor = { path = "/home/satyam/dev/reactor/actor" }
+ping_pong = { path = "/home/satyam/dev/reactor/examples/ping_pong" }
 lazy_static = "1.5.0"
 env_logger = "0.11"
 "#;
@@ -42,12 +43,12 @@ env_logger = "0.11"
 #[derive(Template)]
 #[template(
     source = "
-use ping_pong::actor;
-use tokio::sync::{Mutex, mpsc};
-use reactor_actor::ControlReq;
-use reactor_actor::ControlInst;
-pub use reactor_actor::setup_shared_logger_ref;
 use lazy_static;
+use ping_pong::actor;
+pub use reactor_actor::setup_shared_logger_ref;
+use reactor_actor::ControlInst;
+use reactor_actor::ControlReq;
+use tokio::sync::{mpsc, Mutex};
 
 lazy_static::lazy_static! {
     static ref RUNTIME: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
@@ -70,14 +71,14 @@ pub extern \"C\" fn ponger(
 ) {
     RUNTIME.spawn(actor(inst_recv, req_send, actor_name, \"pinger\"));
 }
-
-",
-    ext = "txt"
+", ext = "txt"
 )]
 struct LibTemplate {}
 
+#[cfg(feature="dynop")]
 struct PingPongCodeGen;
 
+#[cfg(feature="dynop")]
 impl CodeGenerator for PingPongCodeGen {
     fn generate(&self, args: std::collections::HashMap<String, Value>) -> (String, String) {
         let template = LibTemplate {};
@@ -126,7 +127,7 @@ async fn main() {
                     actor_name: "pinger".to_string(),
                     idx: 0,
                     peers: 1,
-                    lib_name: "ping_pong".to_string(),
+                    lib_name: "ping_pong_actor".to_string(),
                 }],
             ),
             (
@@ -137,15 +138,16 @@ async fn main() {
                     actor_name: "ponger".to_string(),
                     idx: 0,
                     peers: 1,
-                    lib_name: "ping_pong".to_string(),
+                    lib_name: "ping_pong_actor".to_string(),
                 }],
             ),
         ]),
     };
     let lib_info = LibInfo {
-        name: "ping_pong".to_string(),
+        name: "ping_pong_actor".to_string(),
         compile_info: HashMap::new(),
     };
+    #[cfg(feature="dynop")]
     let cg = PingPongCodeGen {};
     match cli.command {
         #[cfg(feature = "dynop")]
