@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     net::{Ipv4Addr, SocketAddr},
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -14,7 +14,6 @@ use tokio::{
     io::{AsyncRead, ReadHalf, SimplexStream, WriteHalf},
     net::TcpListener,
     sync::{
-        Mutex,
         mpsc::{self},
         oneshot,
     },
@@ -156,6 +155,7 @@ pub async fn actor<I, S, GS, RS, CD, SS, O, AR, P, BS>(
     mut generators: Vec<Generator<GS, I>>,
     rs: RS,
     after_recieve: AR,
+    mut processor_state: S,
     processor: P,
     bs: SS,
     before_send: BS,
@@ -178,7 +178,7 @@ where
     O: Msg + 'static,
     // AR: Fn(&I, &Arc<Mutex<CS>>) -> Fut + Clone + Send + 'static,
     // Fut: Future<Output = ChannelAction> + Send + 'static,
-    AR: Fn(&I, &Arc<Mutex<RS>>) -> ChannelAction + Send + Sync + 'static + Clone,
+    AR: Fn(&I, &Arc<std::sync::Mutex<RS>>) -> ChannelAction + Send + Sync + 'static + Clone,
     P: Fn(I, &mut S) -> O + Send + 'static,
     BS: Fn(&O, &mut SS) -> ActorAddr + Send + Sync + 'static,
     CD: Encoder<O> + Decoder<Item = I, Error = DecodeErr> + Send + Sync + Clone + 'static,
@@ -212,10 +212,9 @@ where
     let proc_handle: JoinHandle<Result<(), ActorError>> =
         tokio::task::spawn_blocking(move || -> Result<(), ActorError> {
             tracing::info!("[ACTOR][{}] Processor Started", my_addr);
-            let mut s = S::default();
             while let Some(i) = r2p_rx.blocking_recv() {
                 if let R2PMsg::Msg(msg) = i {
-                    let o = processor(msg, &mut s);
+                    let o = processor(msg, &mut processor_state);
                     p2s_tx.send(o).map_err(|_| ActorError::P2SErr)?;
                 } else {
                     break;
