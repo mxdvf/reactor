@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration, sync::Mutex};
 
 use bincode::{Decode, Encode};
 use reactor_actor::{
-    ActorAddr, ChannelAction, ControlInst, ControlReq, DecodeErr, Generator, Msg, RState, SState,
+    ActorAddr, ChannelAction, ControlInst, ControlReq, DecodeErr, Msg, RState, SState,
     State, common::sender_task,
 };
 use tokio::sync::mpsc;
@@ -141,15 +141,9 @@ pub async fn actor(
     other_addr: ActorAddr,
 ) {
     println!("Myaddr {my_addr}, OtherAddr {other_addr}");
-    let mut generators = Vec::new();
+    let mut generators: Vec<Box<dyn Iterator<Item = PingPongMsg> + Send>> = Vec::new();
     if my_addr == "pinger" {
-        generators.push(Generator {
-            s: (),
-            callback: gen_ping,
-            start: Duration::from_millis(1),
-            interval: Duration::from_secs(1),
-            max: Some(1),
-        });
+        generators.push(Box::new(vec![PingPongMsg::Ping].into_iter()));
     }
     reactor_actor::actor(
         my_addr,
