@@ -4,7 +4,7 @@ use std::{
 };
 
 pub type Hostname = &'static str;
-/// 
+
 pub struct Placement {
     hostname_to_num: BTreeMap<&'static str, u32>,
 }

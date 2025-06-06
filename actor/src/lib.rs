@@ -3,7 +3,6 @@ use std::{
     net::{Ipv4Addr, SocketAddr},
     pin::Pin,
     sync::{Arc, Mutex},
-    time::Duration,
 };
 
 use err::{ActorError, RecieverErr};
@@ -18,7 +17,6 @@ use tokio::{
         oneshot,
     },
     task::{JoinHandle, JoinSet},
-    time::Instant,
 };
 use tokio_util::{
     codec::{Decoder, Encoder, FramedRead},
@@ -32,8 +30,6 @@ mod err;
 
 /// State of the Processor
 pub trait State: Default + Send {}
-/// State of the Generator
-pub trait GState: Default + Send {}
 /// State of the Receiver
 pub trait RState: Default + Send {}
 /// State of the Sender
@@ -150,9 +146,9 @@ pub enum ControlReq {
 /// # Panics
 /// - Will panic if sending to the processing or sending channel fails (should not happen unless channels are closed).
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-pub async fn actor<I, S, GS, RS, CD, SS, O, AR, P, BS>(
+pub async fn actor<I, S, RS, CD, SS, O, AR, P, BS>(
     my_addr: ActorAddr,
-    mut generators: Vec<Generator<GS, I>>,
+    mut generators: Vec<Box<dyn Iterator<Item = I> + Send>>,
     rs: RS,
     after_recieve: AR,
     mut processor_state: S,
@@ -172,7 +168,6 @@ pub async fn actor<I, S, GS, RS, CD, SS, O, AR, P, BS>(
 where
     I: Msg + 'static,
     S: State + 'static,
-    GS: GState + 'static,
     RS: RState + 'static,
     SS: SState + 'static,
     O: Msg + 'static,
@@ -183,21 +178,12 @@ where
     BS: Fn(&O, &mut SS) -> ActorAddr + Send + Sync + 'static,
     CD: Encoder<O> + Decoder<Item = I, Error = DecodeErr> + Send + Sync + Clone + 'static,
 {
-    // let fmt_layer = tracing_subscriber::fmt::layer().with_target(false);
-    // let filter_layer = tracing_subscriber::EnvFilter::try_from_default_env()
-    //     .or_else(|_| tracing_subscriber::EnvFilter::try_new("info"))
-    //     .unwrap();
-    // tracing_subscriber::registry()
-    //     .with(filter_layer)
-    //     .with(fmt_layer)
-    //     .init();
-    // tracing_subscriber::fmt::init();
     let (r2p_tx, mut r2p_rx) = mpsc::unbounded_channel::<R2PMsg<I>>();
     let (p2s_tx, p2s_rx) = mpsc::unbounded_channel::<O>();
 
     let gen_handles: Vec<tokio::task::JoinHandle<_>> = generators
         .drain(..)
-        .map(|gene: Generator<GS, I>| tokio::spawn(generator(gene, r2p_tx.clone())))
+        .map(|gene| tokio::spawn(generator(gene, r2p_tx.clone())))
         .collect();
 
     let rx_handle = tokio::spawn(rx(
@@ -367,7 +353,6 @@ where
                     loop {
                         tokio::select! {
                             _ = cancel_token.cancelled() => {
-                                println!("Cancelled");
                                 break;
                             }
                             accept_result = parent_listener.accept() => {
@@ -472,43 +457,16 @@ async fn tx<M, C, BS, RS>(
     tracing::info!("[ACTOR][{}] Tx Ended", my_addr);
 }
 
-pub struct Generator<S, M> {
-    pub s: S,
-    pub callback: fn(u64, &mut S) -> M,
-    pub start: Duration,
-    pub interval: Duration,
-    pub max: Option<u64>,
-}
-
-async fn generator<GS, M>(
-    generator: Generator<GS, M>,
+async fn generator<G, M>(
+    mut generator: G,
     p_tx: mpsc::UnboundedSender<R2PMsg<M>>,
 ) -> Result<(), ActorError>
 where
-    GS: GState + 'static,
+    G: Iterator<Item = M>,
     M: Msg + 'static,
 {
-    let Generator {
-        mut s,
-        callback,
-        interval,
-        start,
-        max,
-    } = generator;
-    // TODO:- What to do after u64::MAX?
-    let max_events = max.unwrap_or(u64::MAX);
-    tokio::time::sleep(start).await;
-
-    let mut last_emit = Instant::now();
-    for i in 0..max_events {
-        let time_since_last_emit = Instant::now() - last_emit;
-        if time_since_last_emit < interval {
-            tokio::time::sleep(interval - time_since_last_emit).await;
-        }
-        let output = callback(i, &mut s);
-        p_tx.send(R2PMsg::Msg(output))
-            .map_err(|_| ActorError::G2PErr)?;
-        last_emit = Instant::now();
+    while let Some(m) = generator.next() {
+        p_tx.send(R2PMsg::Msg(m)).map_err(|_| ActorError::R2PErr)?;
     }
     Ok(())
 }

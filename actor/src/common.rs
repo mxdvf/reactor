@@ -14,7 +14,7 @@ use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 
 use crate::{ActorAddr, Connection, ControlReq, Msg};
 
-use super::{ChannelAction, GState, RState, SState, State};
+use super::{ChannelAction, RState, SState, State};
 
 pub fn receiver_task<M, C, D, AR, RX>(
     rx: RX,
@@ -120,7 +120,6 @@ where
     Box::pin(async move { while rx.recv().await.is_some() {} })
 }
 
-impl GState for () {}
 impl RState for () {}
 impl SState for () {}
 impl State for () {}
