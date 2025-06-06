@@ -171,32 +171,3 @@ pub async fn actor(
     .unwrap();
 }
 
-
-// //////////////////////////////////////////////////////////////////////////////
-//                                Exposed Operators
-// //////////////////////////////////////////////////////////////////////////////
-
-pub use reactor_actor::setup_shared_logger_ref;
-use lazy_static;
-
-lazy_static::lazy_static! {
-    static ref RUNTIME: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn pinger(
-    inst_recv: mpsc::UnboundedReceiver<ControlInst>,
-    req_send: mpsc::Sender<ControlReq>,
-    actor_name: &'static str,
-) {
-    RUNTIME.spawn(actor(inst_recv, req_send, actor_name, "ponger"));
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn ponger(
-    inst_recv: mpsc::UnboundedReceiver<ControlInst>,
-    req_send: mpsc::Sender<ControlReq>,
-    actor_name: &'static str,
-) {
-    RUNTIME.spawn(actor(inst_recv, req_send, actor_name, "pinger"));
-}
