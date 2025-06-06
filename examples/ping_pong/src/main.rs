@@ -12,6 +12,7 @@ use askama::Template;
 use clap::{Parser, Subcommand, arg};
 use reactor_jobm::JobController;
 use reactor_jobm::placement::{LibInfo, LogicalOp, ManualPlacementManager, PhysicalOp};
+#[cfg(feature="dynop")]
 use reactor_node::code_gen::CodeGenerator;
 use reactor_node::node_controller;
 use serde_json::Value;
@@ -76,8 +77,10 @@ pub extern \"C\" fn ponger(
 )]
 struct LibTemplate {}
 
+#[cfg(feature="dynop")]
 struct PingPongCodeGen;
 
+#[cfg(feature="dynop")]
 impl CodeGenerator for PingPongCodeGen {
     fn generate(&self, args: std::collections::HashMap<String, Value>) -> (String, String) {
         let template = LibTemplate {};
@@ -146,6 +149,7 @@ async fn main() {
         name: "ping_pong".to_string(),
         compile_info: HashMap::new(),
     };
+    #[cfg(feature="dynop")]
     let cg = PingPongCodeGen {};
     match cli.command {
         #[cfg(feature = "dynop")]
