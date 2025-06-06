@@ -4,7 +4,7 @@ use std::{
 };
 
 pub type Hostname = &'static str;
-
+/// 
 pub struct Placement {
     hostname_to_num: BTreeMap<&'static str, u32>,
 }
@@ -41,6 +41,7 @@ pub struct PhysicalOp {
     pub peers: u32,
 }
 
+/// Takes logical Op  and places it on single or multiple Nodes. Returns list of Physical operator where a logical operator is placed
 pub trait PlacementManager {
     fn place(&self, op_info: &LogicalOp) -> impl Iterator<Item = PhysicalOp>;
 }

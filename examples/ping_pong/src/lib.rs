@@ -1,11 +1,11 @@
-use std::{sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration, sync::Mutex};
 
 use bincode::{Decode, Encode};
 use reactor_actor::{
     ActorAddr, ChannelAction, ControlInst, ControlReq, DecodeErr, Generator, Msg, RState, SState,
     State, common::sender_task,
 };
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::mpsc;
 use tokio_util::bytes::{Bytes, BytesMut};
 
 // //////////////////////////////////////////////////////////////////////////////
@@ -156,6 +156,7 @@ pub async fn actor(
         generators,
         ChannelState::default(),
         after_recv,
+        PingPongState{},
         processor,
         RouterState {
             _my_addr: my_addr,
