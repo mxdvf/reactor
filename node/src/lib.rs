@@ -119,7 +119,7 @@ fn load_ops(operator_dir: PathBuf) -> OpLibrary {
         for entry in fs::read_dir(operator_dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
-            if path.extension() == Some(OsStr::new("so")) {
+            if path.extension() == Some(OsStr::new("so")) || path.extension() == Some(OsStr::new("dylib")) {
                 let file_stem = path.file_stem().unwrap().to_string_lossy().to_string();
                 let lib_name = file_stem
                     .strip_prefix("lib")
@@ -236,6 +236,9 @@ async fn handle_actor_req(
                 resp_tx
                     .send(Connection::Remote(local.remote_actor_addr))
                     .unwrap();
+            } else if addr == "null"{
+                log::debug!("Received addr {addr}");
+            
             } else {
                 panic!("Couldn't Resolve {}", addr);
             }

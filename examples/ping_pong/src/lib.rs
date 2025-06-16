@@ -51,11 +51,11 @@ fn after_recv(_msg: &PingPongMsg, _channel_state: &Arc<Mutex<ChannelState>>) -> 
     ChannelAction::PASS
 }
 
-fn processor(msg: PingPongMsg, _state: &mut PingPongState) -> PingPongMsg {
+fn processor(msg: PingPongMsg, _state: &mut PingPongState) -> Vec<PingPongMsg> {
     std::thread::sleep(Duration::from_secs(1));
     match msg {
-        PingPongMsg::Ping => PingPongMsg::Pong,
-        PingPongMsg::Pong => PingPongMsg::Ping,
+        PingPongMsg::Ping => vec![PingPongMsg::Pong],
+        PingPongMsg::Pong => vec![PingPongMsg::Ping],
     }
 }
 

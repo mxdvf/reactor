@@ -170,11 +170,11 @@ where
     S: State + 'static,
     RS: RState + 'static,
     SS: SState + 'static,
-    O: Msg + 'static,
+    O: Msg  + 'static,
     // AR: Fn(&I, &Arc<Mutex<CS>>) -> Fut + Clone + Send + 'static,
     // Fut: Future<Output = ChannelAction> + Send + 'static,
     AR: Fn(&I, &Arc<std::sync::Mutex<RS>>) -> ChannelAction + Send + Sync + 'static + Clone,
-    P: Fn(I, &mut S) -> O + Send + 'static,
+    P: Fn(I, &mut S) -> Vec<O> + Send + 'static,
     BS: Fn(&O, &mut SS) -> ActorAddr + Send + Sync + 'static,
     CD: Encoder<O> + Decoder<Item = I, Error = DecodeErr> + Send + Sync + Clone + 'static,
 {
@@ -200,8 +200,12 @@ where
             tracing::info!("[ACTOR][{}] Processor Started", my_addr);
             while let Some(i) = r2p_rx.blocking_recv() {
                 if let R2PMsg::Msg(msg) = i {
-                    let o = processor(msg, &mut processor_state);
-                    p2s_tx.send(o).map_err(|_| ActorError::P2SErr)?;
+                    let processed_messages = processor(msg, &mut processor_state);
+
+                    for message in processed_messages{
+                        p2s_tx.send(message).map_err(|_| ActorError::P2SErr)?;
+                    }
+                    
                 } else {
                     break;
                 }
