@@ -134,7 +134,7 @@ async fn main() {
                 "ponger".to_string(),
                 vec![PhysicalOp {
                     logical: (ops[1]).clone(),
-                    nodename: "node1".to_string(),
+                    nodename: "node2".to_string(),
                     actor_name: "ponger".to_string(),
                     idx: 0,
                     peers: 1,
@@ -156,13 +156,15 @@ async fn main() {
         Commands::Node { port, dir } => node_controller(port, dir).await,
         Commands::JobManager => {
             let mut gc = JobController::new(pm);
-            gc.register_node("node1", "0.0.0.0");
+            gc.register_node("node1", "10.227.52.149");
+            gc.register_node("node2", "10.237.20.60"); //node1.cse.iitd.ac.in
+            
             #[cfg(feature = "dynop")]
             {
                 gc.register_lib(&lib_info, "node1").await;
             }
             gc.start_job(ops).await;
-            tokio::time::sleep(Duration::from_secs(5)).await;
+            tokio::time::sleep(Duration::from_secs(10)).await;
             gc.stop_job().await;
         }
     }

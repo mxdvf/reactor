@@ -29,7 +29,7 @@ impl RState for ChannelState {}
 // //////////////////////////////////////////////////////////////////////////////
 //                                PROCESSOR STATE
 // //////////////////////////////////////////////////////////////////////////////
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct PingPongState {}
 impl State for PingPongState {}
 
@@ -143,6 +143,8 @@ pub async fn actor(
     println!("Myaddr {my_addr}, OtherAddr {other_addr}");
     let mut generators: Vec<Box<dyn Iterator<Item = PingPongMsg> + Send>> = Vec::new();
     if my_addr == "pinger" {
+        //log::info!("Not sending Ping pong generator");
+        //println!("Not sending Ping pong generator");
         generators.push(Box::new(vec![PingPongMsg::Ping].into_iter()));
     }
     reactor_actor::actor(

@@ -10,6 +10,7 @@ use reactor_client::{
 pub mod placement;
 
 struct NodeHandle {
+    hostname: Hostname,
     client_config: reactor_client::apis::configuration::Configuration,
     actors: Vec<RemoteActorInfo>,
     loaded_libs: Vec<String>,
@@ -45,7 +46,7 @@ impl NodeHandle {
     }
 
     async fn place(&mut self, physical_op: &PhysicalOp) -> RemoteActorInfo {
-        let remote_actor_info = reactor_client::apis::default_api::start_actor(
+        let mut remote_actor_info = reactor_client::apis::default_api::start_actor(
             &self.client_config,
             SpawnArgs {
                 actor_name: physical_op.actor_name.clone(),
@@ -55,6 +56,7 @@ impl NodeHandle {
         )
         .await
         .unwrap();
+        remote_actor_info.hostname = self.hostname.to_string();
         self.actors.push(remote_actor_info.clone());
         remote_actor_info
     }
@@ -88,6 +90,7 @@ impl<PM: PlacementManager> JobController<PM> {
         self.nodes.insert(
             name.to_string(),
             NodeHandle {
+                hostname,
                 client_config: self.client_config(hostname),
                 actors: Vec::new(),
                 loaded_libs: Vec::new(),
@@ -105,8 +108,13 @@ impl<PM: PlacementManager> JobController<PM> {
     }
 
     pub async fn start_job(&mut self, ops: Vec<LogicalOp>) {
+        for op in &ops {
+           println!("Op is: {:?}", op);
+        }
+
         for op in ops {
             for physical_op in self.pm.place(&op) {
+                println!("Physical op is: {:?}",physical_op);
                 let remote_actor_info = self
                     .nodes
                     .get_mut(&physical_op.nodename)
