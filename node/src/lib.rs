@@ -144,6 +144,7 @@ async fn actor_control_loop(
     let mut local_actors: HashMap<ActorAddr, LocalActor> = HashMap::new();
     let mut remote_actors: HashMap<ActorAddr, RemoteActor> = HashMap::new();
     let (actor_control_tx, mut actor_control_rx) = channel(20);
+    let mut port: u16 = 6000;
 
     loop {
         tokio::select! {
@@ -158,7 +159,8 @@ async fn actor_control_loop(
             req = job_control_rx.recv() => {
                 match req {
                     Some(req) => {
-                        handle_job_req(req, &op_lib, &mut local_actors, &mut remote_actors, &actor_control_tx).await;
+                        handle_job_req(req, &op_lib, &mut local_actors, &mut remote_actors, &actor_control_tx, port).await;
+                        port = port + 1;
                     },
                     None => break,
                 }
@@ -174,6 +176,7 @@ async fn handle_job_req(
     local_actors: &mut HashMap<ActorAddr, LocalActor>,
     remote_actors: &mut HashMap<ActorAddr, RemoteActor>,
     actor_contrl_tx: &Sender<ControlReq>,
+    port: u16
 ) {
     match req {
         JobControllerReq::SpawnActor {
@@ -193,7 +196,7 @@ async fn handle_job_req(
                 shared_logger(logger);
                 let op: libloading::Symbol<ActorSpawnCB> = lib.get(op_name.as_bytes()).unwrap();
                 op(control_rx, actor_contrl_tx.clone(), addr);
-                let port: u16 = 6000;
+                //let port: u16 = 6000;
                 resp_tx.send(Some(SpawnResult { port })).unwrap();
                 control_tx.send(ControlInst::StartTcpRecv(port)).unwrap();
                 local_actors.insert(addr, LocalActor { handle: control_tx });
