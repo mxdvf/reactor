@@ -51,7 +51,7 @@ impl NodeHandle {
             SpawnArgs {
                 actor_name: physical_op.actor_name.clone(),
                 operator_name: physical_op.logical.name.clone(),
-                lib_name: physical_op.lib_name.clone(),
+                lib_name: physical_op.logical.lib_name.clone(),
             },
         )
         .await
@@ -108,13 +108,9 @@ impl<PM: PlacementManager> JobController<PM> {
     }
 
     pub async fn start_job(&mut self, ops: Vec<LogicalOp>) {
-        for op in &ops {
-           println!("Op is: {:?}", op);
-        }
-
         for op in ops {
             for physical_op in self.pm.place(&op) {
-                println!("Physical op is: {:?}",physical_op);
+                log::info!("Starting Physical op: {:?}", physical_op);
                 let remote_actor_info = self
                     .nodes
                     .get_mut(&physical_op.nodename)
