@@ -20,6 +20,11 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
+extern crate pyroscope;
+
+use pyroscope::{PyroscopeAgent, Result};
+use pyroscope_pprofrs::{pprof_backend, PprofConfig};
+
 const CARGO_TOML: &str = r#"
 [package]
 name = "ping_pong_actor2"
@@ -163,9 +168,41 @@ async fn main() {
             {
                 gc.register_lib(&lib_info, "node1").await;
             }
+
+            let agent = PyroscopeAgent::builder("http://localhost:4040", "example.async")
+                .backend(pprof_backend(PprofConfig::new().sample_rate(100)))
+                .tags([("TagA", "ValueA"), ("TagB", "ValueB")].to_vec())
+                .build()?;
+
+            // Show start time
+            let start = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            println!("Start Time: {}", start);
+            
+            // Start Agent
+            let agent_running = agent.start()?;
+
+            
             gc.start_job(ops).await;
             tokio::time::sleep(Duration::from_secs(10)).await;
             gc.stop_job().await;
+
+            // Stop Agent
+            let agent_ready = agent_running.stop()?;
+
+            // Shutdown the Agent
+            agent_ready.shutdown();
+
+            // Show program exit time
+            let exit = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            println!("Exit Time: {}", exit);
+
+
         }
     }
 }

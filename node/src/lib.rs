@@ -92,7 +92,7 @@ pub async fn node_controller(port: u16, operator_dir: PathBuf) {
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
-    log::info!("[Node] Controller Start");
+    log::info!("[Node] Controller Start on port {}", port);
 
     let ops = load_ops(operator_dir);
 

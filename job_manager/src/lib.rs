@@ -86,12 +86,12 @@ impl<PM: PlacementManager> JobController<PM> {
             nodes: BTreeMap::new(),
         }
     }
-    pub fn register_node(&mut self, name: &str, hostname: Hostname) {
+    pub fn register_node(&mut self, name: &str, hostname: Hostname, port: u32) {
         self.nodes.insert(
             name.to_string(),
             NodeHandle {
                 hostname,
-                client_config: self.client_config(hostname),
+                client_config: self.client_config(hostname, port),
                 actors: Vec::new(),
                 loaded_libs: Vec::new(),
             },
@@ -121,6 +121,7 @@ impl<PM: PlacementManager> JobController<PM> {
                     .expect("Node must be register before placement")
                     .place(&physical_op)
                     .await;
+                    
                 let handles: Vec<_> = self
                     .nodes
                     .iter()
@@ -149,9 +150,10 @@ impl<PM: PlacementManager> JobController<PM> {
     fn client_config(
         &self,
         hostname: Hostname,
+        port: u32,
     ) -> reactor_client::apis::configuration::Configuration {
         reactor_client::apis::configuration::Configuration {
-            base_path: format!("http://{}:{}", hostname, 3000),
+            base_path: format!("http://{}:{}", hostname, port),
             ..Default::default()
         }
     }
