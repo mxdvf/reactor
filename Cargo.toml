@@ -3,13 +3,12 @@ members = [
     "actor",
     "node",
     "rpc_client",
-    "job_manager"
+    "job_manager",
+    "generic_nctrl",
+    "generic_jctrl"
 ]
 
-exclude = ["examples/ping_pong/ping_pong_actor", 
-            "examples/ping_pong/ping_pong_node", 
-            "examples/node_controller",
-            "examples/ping_pong/ping_pong_jobm"]
+exclude = ["examples"]
 resolver = "2"
 
 [workspace.package]

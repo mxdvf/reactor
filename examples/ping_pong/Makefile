@@ -1,5 +1,14 @@
-node_controller:
-	../node_controller/target/release/node_controller node --port 3000 target/release
+install_node:
+	cargo install --path ../../generic_nctrl/
+
+install_jobc:
+	cargo install --path ../../generic_jctrl/
+
+build_ops:
+	cargo build --release
+
+node:
+	reactor_nctrl --port 3000 target/release
 	
-job_manager:
-	target/release/ping_pong_jobm
+job:
+	reactor_jctrl ping_pong.toml
