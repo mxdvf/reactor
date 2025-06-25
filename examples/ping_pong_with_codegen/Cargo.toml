@@ -1,7 +1,5 @@
 [workspace]
-members = ["ping_pong_actor", 
-            "ping_pong_node", 
-            "ping_pong_jobm"]
+members = ["node", "jobc"]
 
 resolver = "2"
 

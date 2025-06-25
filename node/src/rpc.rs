@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr, net::IpAddr, sync::Arc, time::Duration};
+use std::{collections::HashMap, net::IpAddr, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
     Json, Router,
@@ -10,7 +10,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::{net::lookup_host, sync::mpsc::UnboundedSender};
+use tokio::sync::mpsc::UnboundedSender;
 use tower_http::{classify::ServerErrorsFailureClass, trace::TraceLayer};
 use tracing::{Span, info_span};
 #[cfg(feature = "swagger")]
@@ -143,40 +143,40 @@ async fn actor_added(
     State(state): State<Arc<AppState>>,
     Json(actor_info): Json<RemoteActorInfo>,
 ) -> impl IntoResponse {
-/*if let Ok(mut hosts) = lookup_host(&actor_info.hostname).await {
-    if let Some(socket_addr) = hosts.next() {
-        let remote_ip = socket_addr.ip();
-        println!("Resolved remote IP: {}", remote_ip);
+    /*if let Ok(mut hosts) = lookup_host(&actor_info.hostname).await {
+        if let Some(socket_addr) = hosts.next() {
+            let remote_ip = socket_addr.ip();
+            println!("Resolved remote IP: {}", remote_ip);
 
-        let sock_addr = SocketAddr::new(remote_ip, actor_info.port);
-        println!("Full socket address: {}", sock_addr);
+            let sock_addr = SocketAddr::new(remote_ip, actor_info.port);
+            println!("Full socket address: {}", sock_addr);
 
-        state
-            .clone()
-            .tx
-            .send(JobControllerReq::RemoteActorAdded {
-                addr: actor_info.name.leak(),
-                sock_addr,
-            })
-            .unwrap();
+            state
+                .clone()
+                .tx
+                .send(JobControllerReq::RemoteActorAdded {
+                    addr: actor_info.name.leak(),
+                    sock_addr,
+                })
+                .unwrap();
 
-        (axum::http::StatusCode::CREATED, "Actor added!")
+            (axum::http::StatusCode::CREATED, "Actor added!")
+        } else {
+            eprintln!("No IPs resolved for hostname: {}", actor_info.hostname);
+            (axum::http::StatusCode::BAD_REQUEST, "Hostname could not be resolved")
+        }
     } else {
-        eprintln!("No IPs resolved for hostname: {}", actor_info.hostname);
-        (axum::http::StatusCode::BAD_REQUEST, "Hostname could not be resolved")
-    }
-} else {
-    eprintln!("Failed to lookup host: {}", actor_info.hostname);
-    (axum::http::StatusCode::BAD_REQUEST, "Invalid hostname")
-}*/
+        eprintln!("Failed to lookup host: {}", actor_info.hostname);
+        (axum::http::StatusCode::BAD_REQUEST, "Invalid hostname")
+    }*/
 
     /*let remote_ip = lookup_host(actor_info.hostname)
-        .await
-        .unwrap()
-        .next()
-        .unwrap()
-        .ip();*/
-    let remote_ip: IpAddr  = actor_info.hostname.parse().unwrap();
+    .await
+    .unwrap()
+    .next()
+    .unwrap()
+    .ip();*/
+    let remote_ip: IpAddr = actor_info.hostname.parse().unwrap();
     state
         .clone()
         .tx

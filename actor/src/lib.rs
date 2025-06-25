@@ -170,7 +170,7 @@ where
     S: State + 'static,
     RS: RState + 'static,
     SS: SState + 'static,
-    O: Msg  + 'static,
+    O: Msg + 'static,
     // AR: Fn(&I, &Arc<Mutex<CS>>) -> Fut + Clone + Send + 'static,
     // Fut: Future<Output = ChannelAction> + Send + 'static,
     AR: Fn(&I, &Arc<std::sync::Mutex<RS>>) -> ChannelAction + Send + Sync + 'static + Clone,
@@ -202,10 +202,9 @@ where
                 if let R2PMsg::Msg(msg) = i {
                     let processed_messages = processor(msg, &mut processor_state);
 
-                    for message in processed_messages{
+                    for message in processed_messages {
                         p2s_tx.send(message).map_err(|_| ActorError::P2SErr)?;
                     }
-                    
                 } else {
                     break;
                 }
@@ -462,14 +461,14 @@ async fn tx<M, C, BS, RS>(
 }
 
 async fn generator<G, M>(
-    mut generator: G,
+    generator: G,
     p_tx: mpsc::UnboundedSender<R2PMsg<M>>,
 ) -> Result<(), ActorError>
 where
     G: Iterator<Item = M>,
     M: Msg + 'static,
 {
-    while let Some(m) = generator.next() {
+    for m in generator {
         p_tx.send(R2PMsg::Msg(m)).map_err(|_| ActorError::R2PErr)?;
     }
     Ok(())

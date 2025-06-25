@@ -1,17 +1,15 @@
-## This example can be run in two modes:- with and without codegen
-
-#### Install generic node controller
+### Install generic node controller
 `make install_node`
 
-#### Install generic job controller
+### Install generic job controller
 `make install_jobc`
 
-#### Build operator library
+### Build operator library
 `make build_ops`
 
 
-#### Start Node Controller
+### Start Node Controller
 `make node`
 
-#### Start Job
+### Start Job
 `make job`

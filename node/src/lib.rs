@@ -25,12 +25,11 @@ use std::path::PathBuf;
 
 #[cfg(feature = "dynop")]
 pub mod code_gen;
+#[cfg(feature = "dynop")]
+pub mod lib_builder;
 mod rpc;
 use rpc::webserver;
 mod op_lib_manager;
-
-#[cfg(feature = "dynop")]
-mod lib_builder;
 
 pub type NodeAddr = &'static str;
 pub type ActorSpawnCB =
@@ -119,7 +118,9 @@ fn load_ops(operator_dir: PathBuf) -> OpLibrary {
         for entry in fs::read_dir(operator_dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
-            if path.extension() == Some(OsStr::new("so")) || path.extension() == Some(OsStr::new("dylib")) {
+            if path.extension() == Some(OsStr::new("so"))
+                || path.extension() == Some(OsStr::new("dylib"))
+            {
                 let file_stem = path.file_stem().unwrap().to_string_lossy().to_string();
                 let lib_name = file_stem
                     .strip_prefix("lib")
@@ -160,7 +161,7 @@ async fn actor_control_loop(
                 match req {
                     Some(req) => {
                         handle_job_req(req, &op_lib, &mut local_actors, &mut remote_actors, &actor_control_tx, port).await;
-                        port = port + 1;
+                        port += 1;
                     },
                     None => break,
                 }
@@ -176,7 +177,7 @@ async fn handle_job_req(
     local_actors: &mut HashMap<ActorAddr, LocalActor>,
     remote_actors: &mut HashMap<ActorAddr, RemoteActor>,
     actor_contrl_tx: &Sender<ControlReq>,
-    port: u16
+    port: u16,
 ) {
     match req {
         JobControllerReq::SpawnActor {
@@ -239,9 +240,8 @@ async fn handle_actor_req(
                 resp_tx
                     .send(Connection::Remote(local.remote_actor_addr))
                     .unwrap();
-            } else if addr == "null"{
+            } else if addr == "null" {
                 log::debug!("Received addr {addr}");
-            
             } else {
                 panic!("Couldn't Resolve {}", addr);
             }
@@ -250,7 +250,7 @@ async fn handle_actor_req(
 }
 
 // //////////////////////////////////////////////////////////////////////////////////////////////////
-// /////////////////////////////////////// Dynamic OPerators ////////////////////////////////////////
+// /////////////////////////////////////// Dynamic Operators ////////////////////////////////////////
 // //////////////////////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(feature = "dynop")]

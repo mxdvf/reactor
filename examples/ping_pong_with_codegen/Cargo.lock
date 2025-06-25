@@ -1057,22 +1057,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
-name = "ping_pong_actor"
-version = "0.1.0"
-dependencies = [
- "bincode",
- "env_logger",
- "lazy_static",
- "reactor-actor",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
 name = "ping_pong_jobm"
 version = "0.1.0"
 dependencies = [
  "askama",
+ "clap",
  "env_logger",
  "reactor-jobm",
  "tokio",
@@ -1082,8 +1071,10 @@ dependencies = [
 name = "ping_pong_node"
 version = "0.1.0"
 dependencies = [
+ "askama",
  "clap",
  "env_logger",
+ "reactor-jobm",
  "reactor-node",
  "serde_json",
  "tokio",

@@ -5,7 +5,7 @@ use cargo_toml::Manifest;
 use libloading::Library;
 use thiserror::Error;
 
-pub(crate) struct LibBuilder {}
+pub struct LibBuilder {}
 
 #[derive(Error, Debug)]
 pub enum BuildError {
@@ -52,7 +52,8 @@ impl LibBuilder {
 
         // Build with cargo
         let status = Command::new("cargo")
-            .args(["build", "--offline", "--release"])
+            .args(["build", "--release"])
+            // .args(["build", "--offline", "--release"])
             .current_dir(dir_path)
             .status()
             .map_err(BuildError::Io)?;

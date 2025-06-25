@@ -1,27 +1,15 @@
-## This example can be run in two modes:- with and without codegen
+### Install generic node controller
+`make install_node`
 
-### Running Without Codegen
-In this case the library is already present in `target/debug` on the node.
+### Install generic job controller
+`make install_jobc`
 
-#### Build generic Node Controller
-`cd ../node_controller`
-`cargo build --release`
-
-#### Build Operator, Job Manager and Codegen specific Node Controller
-`cargo build --release`
-
-#### Start Node Controller
-`make node_controller`
-
-#### Start Job Manager
-`make job_manager`
+### Build operator library
+`make build_ops`
 
 
+### Start Node Controller
+`make node`
 
-[FIXME]
-### Running With Codegen
-In this case the library is compiled by the node using the source sent by the job manger.
-#### Start Node
-`cargo run --features dynop node --port 3000 target/debug`
-#### Start Job
-`cargo run --features dynop node job-manager`
+### Start Job
+`make job`

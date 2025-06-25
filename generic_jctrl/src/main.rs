@@ -47,7 +47,7 @@ async fn main() {
     }
 
     jc.start_job(ops).await;
-    tokio::time::sleep(Duration::from_secs(10)).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
     jc.stop_job().await;
 }
 
@@ -57,7 +57,6 @@ mod tests {
 
     use super::*;
     use reactor_jobm::placement::PhysicalOp;
-    use toml;
 
     #[test]
     fn test_manual_placement_manager_parse() {
