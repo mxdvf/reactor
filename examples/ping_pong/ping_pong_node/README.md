@@ -3,16 +3,22 @@
 ### Running Without Codegen
 In this case the library is already present in `target/debug` on the node.
 
-#### Build Operator
-`cd ping_pong_actor`
-`cargo build`
+#### Build generic Node Controller
+`cd ../node_controller`
+`cargo build --release`
 
-#### Start Node
-`cargo run node --port 3000 ../ping_pong_actor/target/debug`
-#### Start Job
-`cargo run node job-manager`
+#### Build Operator, Job Manager and Codegen specific Node Controller
+`cargo build --release`
+
+#### Start Node Controller
+`make node_controller`
+
+#### Start Job Manager
+`make job_manager`
 
 
+
+[FIXME]
 ### Running With Codegen
 In this case the library is compiled by the node using the source sent by the job manger.
 #### Start Node

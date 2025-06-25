@@ -1,5 +1,5 @@
 [package]
-name = "ping_pong_node"
+name = "node_controller"
 version = "0.1.0"
 edition = "2024"
 
@@ -11,8 +11,10 @@ reactor-node = { path = "../../node" }
 clap = { version = "4", features = ["derive"] }
 serde_json = "1.0.140"
 
+[lib]
+path = "src/lib.rs"
+
 
 [features]
 default = []
-dynop = ["reactor-node/dynop"]
 swagger = ["reactor-node/swagger"]

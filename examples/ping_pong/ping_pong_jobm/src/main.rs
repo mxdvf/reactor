@@ -111,7 +111,7 @@ async fn main() {
                 "ponger".to_string(),
                 vec![PhysicalOp {
                     logical: (ops[1]).clone(),
-                    nodename: "node2".to_string(),
+                    nodename: "node1".to_string(),
                     actor_name: "ponger".to_string(),
                     idx: 0,
                     peers: 1,
@@ -126,7 +126,7 @@ async fn main() {
     #[cfg(feature="dynop")]
     let cg = PingPongCodeGen {};
     let mut gc = JobController::new(pm);
-    gc.register_node("node1", "10.227.52.149", 3000);
+    gc.register_node("node1", "127.0.0.1", 3000);
 
     #[cfg(feature = "dynop")]
     {
