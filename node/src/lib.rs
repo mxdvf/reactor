@@ -4,12 +4,9 @@ use op_lib_manager::OpLibrary;
 use reactor_actor::{Connection, ControlInst, ControlReq};
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use tokio::{
-    io::simplex,
-    sync::{
-        mpsc::{self, Sender, UnboundedReceiver, UnboundedSender, channel, unbounded_channel},
-        oneshot,
-    },
+use tokio::sync::{
+    mpsc::{self, Sender, UnboundedReceiver, UnboundedSender, channel, unbounded_channel},
+    oneshot,
 };
 use tracing_shared::SharedLogger;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -230,7 +227,7 @@ async fn handle_actor_req(
         ControlReq::Resolve { addr, resp_tx } => {
             log::debug!("[Node] Resolving {addr}");
             if let Some(local) = local_actors.get(addr) {
-                let (read_half, write_half) = simplex(1 << 20);
+                let (write_half, read_half) = mpsc::channel(1 << 10);
                 local
                     .handle
                     .send(ControlInst::StartLocalRecv(read_half))

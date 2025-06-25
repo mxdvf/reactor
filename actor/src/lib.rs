@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     collections::HashMap,
     net::{Ipv4Addr, SocketAddr},
     pin::Pin,
@@ -10,7 +11,7 @@ use futures::{StreamExt, future::join_all};
 // use reactor_node::{ControlInst, ControlReq};
 use socket2::{Domain, Socket, Type};
 use tokio::{
-    io::{AsyncRead, ReadHalf, SimplexStream, WriteHalf},
+    io::AsyncRead,
     net::TcpListener,
     sync::{
         mpsc::{self},
@@ -40,6 +41,10 @@ pub trait Msg: Send + std::fmt::Debug {}
 
 /// Addr of the actors
 pub type ActorAddr = &'static str;
+
+/// Type of channel that is used to send message from one local actor to the other.
+pub type LocalChannelTx = mpsc::Sender<Box<dyn Any + Send>>;
+pub type LocalChannelRx = mpsc::Receiver<Box<dyn Any + Send>>;
 
 /// Represents the action to take after receiving and decoding a message from a channel.
 ///
@@ -84,7 +89,7 @@ enum R2PMsg<T> {
 
 /// Instructions that are sent by the local controller to the actor
 pub enum ControlInst {
-    StartLocalRecv(ReadHalf<SimplexStream>),
+    StartLocalRecv(LocalChannelRx),
     StartTcpRecv(u16),
     Stop,
 }
@@ -93,7 +98,7 @@ pub enum ControlInst {
 #[derive(Debug)]
 pub enum Connection {
     Remote(SocketAddr),
-    Local(WriteHalf<SimplexStream>),
+    Local(LocalChannelTx),
 }
 
 /// Requests that can be sent to the local controller by the actor or some external
@@ -228,7 +233,7 @@ where
     Ok(())
 }
 
-async fn parent_recv_subtask<M, C, D, AR, RX>(
+async fn remote_parent_recv_subtask<M, C, D, AR, RX>(
     after_recv: AR,
     row_q: mpsc::UnboundedSender<R2PMsg<M>>,
     cstate: Arc<Mutex<C>>,
@@ -266,6 +271,42 @@ async fn parent_recv_subtask<M, C, D, AR, RX>(
     tracing::info!("[ACTOR] SubRx Ended");
 }
 
+async fn local_parent_recv_subtask<M, C, AR>(
+    after_recv: AR,
+    row_q: mpsc::UnboundedSender<R2PMsg<M>>,
+    cstate: Arc<Mutex<C>>,
+    mut local_rx: LocalChannelRx,
+) where
+    M: Msg + 'static,
+    C: RState,
+    // AR: Fn(&M, &Arc<Mutex<C>>) -> Fut,
+    AR: Fn(&M, &Arc<Mutex<C>>) -> ChannelAction + 'static + Clone,
+    // Fut: Future<Output = ChannelAction> + Send,
+{
+    tracing::info!("[ACTOR] SubRx Started");
+    loop {
+        if let Some(msg) = local_rx.recv().await {
+            let msg = msg.downcast::<M>().unwrap();
+            match after_recv(&msg, &cstate) {
+                ChannelAction::PASS => {}
+                ChannelAction::PANIC => {
+                    panic!()
+                }
+                ChannelAction::DROP => {
+                    continue;
+                }
+                ChannelAction::SYNC(_) => todo!(),
+                ChannelAction::CLOSE => {
+                    break;
+                }
+            }
+            if row_q.send(R2PMsg::Msg(*msg)).is_err() {
+                break;
+            }
+        }
+    }
+    tracing::info!("[ACTOR] SubRx Ended");
+}
 /// Spawns tasks to receive messages from incoming network or local control channels,
 /// decode them, and forward them for processing based on channel state.
 ///
@@ -364,7 +405,7 @@ where
                                 })?;
                                 let (rx, _) = socket.into_split();
                                 let framed_reader = FramedRead::new(rx, decoder_clone.clone());
-                                remote_recv_set.spawn(parent_recv_subtask(
+                                remote_recv_set.spawn(remote_parent_recv_subtask(
                                     after_recv_clone.clone(),
                                     p_tx_clone.clone(),
                                     cstate_clone.clone(),
@@ -377,13 +418,12 @@ where
                     Ok(())
                 });
             }
-            ControlInst::StartLocalRecv(simplex_stream) => {
-                let framed_reader = FramedRead::new(simplex_stream, decoder.clone());
-                local_recv_set.spawn(parent_recv_subtask(
+            ControlInst::StartLocalRecv(local_rx) => {
+                local_recv_set.spawn(local_parent_recv_subtask(
                     after_recv.clone(),
                     p_tx.clone(),
                     channel_state.clone(),
-                    framed_reader,
+                    local_rx,
                 ));
             }
             ControlInst::Stop => {

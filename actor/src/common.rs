@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     pin::Pin,
     sync::{Arc, Mutex},
     time::Duration,
@@ -62,7 +63,7 @@ where
     C: Encoder<M> + 'static + Send,
 {
     // Common sender for both local and remote actor.
-    async fn sender<C: Encoder<M> + 'static + Send, M>(
+    async fn remote_sender<C: Encoder<M> + 'static + Send, M>(
         tx: impl AsyncWrite + Unpin,
         mut rx: mpsc::UnboundedReceiver<M>,
         encoder: C,
@@ -72,6 +73,20 @@ where
         loop {
             if let Some(msg) = rx.recv().await {
                 if framed_writer.send(msg).await.is_err() {
+                    break;
+                }
+            }
+        }
+        log::info!("[ACTOR] SubTx Ended");
+    }
+    async fn local_sender<M: Send + 'static>(
+        tx: mpsc::Sender<Box<dyn Any + Send>>,
+        mut rx: mpsc::UnboundedReceiver<M>,
+    ) {
+        log::info!("[ACTOR] SubTx Started (Local)");
+        loop {
+            if let Some(msg) = rx.recv().await {
+                if tx.send(Box::new(msg)).await.is_err() {
                     break;
                 }
             }
@@ -92,7 +107,7 @@ where
                 match TcpStream::connect(socket_addr).await {
                     Ok(s) => {
                         let (_, tx) = s.into_split();
-                        break sender(tx, rx, encoder).await;
+                        break remote_sender(tx, rx, encoder).await;
                     }
                     Err(_) => {
                         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -101,7 +116,7 @@ where
                 }
             },
             Connection::Local(write_half) => {
-                sender(write_half, rx, encoder).await;
+                local_sender(write_half, rx).await;
             }
         };
     })
