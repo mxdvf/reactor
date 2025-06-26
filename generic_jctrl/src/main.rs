@@ -15,6 +15,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use tokio::signal;
 use std::time::Duration;
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -47,7 +48,7 @@ async fn main() {
     }
 
     jc.start_job(ops).await;
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    signal::ctrl_c().await;
     jc.stop_job().await;
 }
 

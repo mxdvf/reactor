@@ -134,11 +134,6 @@ impl tokio_util::codec::Encoder<PingPongMsg> for PingPongCodec {
 //                                ACTORS
 // //////////////////////////////////////////////////////////////////////////////
 
-fn gen_ping(_i: u64, _s: &mut ()) -> PingPongMsg {
-    println!("Generating ping");
-    PingPongMsg::Ping
-}
-
 pub async fn actor(
     controller_rx: mpsc::UnboundedReceiver<ControlInst>,
     controller_tx: mpsc::Sender<ControlReq>,
