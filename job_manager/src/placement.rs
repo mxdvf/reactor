@@ -43,7 +43,6 @@ pub struct LogicalOp {
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct PhysicalOp {
-    pub logical: LogicalOp,
     pub nodename: String,
     pub actor_name: String,
     pub idx: u32,

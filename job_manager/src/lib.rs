@@ -45,13 +45,13 @@ impl NodeHandle {
         self.loaded_libs.push(lib_info.name.clone());
     }
 
-    async fn place(&mut self, physical_op: &PhysicalOp) -> RemoteActorInfo {
+    async fn place(&mut self, logical_op: &LogicalOp, physical_op: &PhysicalOp) -> RemoteActorInfo {
         let mut remote_actor_info = reactor_client::apis::default_api::start_actor(
             &self.client_config,
             SpawnArgs {
                 actor_name: physical_op.actor_name.clone(),
-                operator_name: physical_op.logical.name.clone(),
-                lib_name: physical_op.logical.lib_name.clone(),
+                operator_name: logical_op.name.clone(),
+                lib_name: logical_op.lib_name.clone(),
             },
         )
         .await
@@ -115,7 +115,7 @@ impl<PM: PlacementManager> JobController<PM> {
                     .nodes
                     .get_mut(&physical_op.nodename)
                     .expect("Node must be register before placement")
-                    .place(&physical_op)
+                    .place(&op, &physical_op)
                     .await;
 
                 let handles: Vec<_> = self
