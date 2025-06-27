@@ -16,7 +16,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use tokio::signal;
-use std::time::Duration;
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct JobManifest {
@@ -48,16 +47,16 @@ async fn main() {
     }
 
     jc.start_job(ops).await;
-    signal::ctrl_c().await;
+    let _ = signal::ctrl_c().await;
     jc.stop_job().await;
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use serde::de::Unexpected::Option;
     use super::*;
     use reactor_jobm::placement::PhysicalOp;
+    use serde::de::Unexpected::Option;
+    use std::collections::HashMap;
 
     #[test]
     fn test_manual_placement_manager_parse() {
@@ -105,7 +104,7 @@ port = 3000
                     vec![PhysicalOp {
                         nodename: "node1".into(),
                         actor_name: "pinger".into(),
-                        payload: HashMap::from([("other".to_string(), "ponger".to_string())])
+                        payload: HashMap::from([("other".to_string(), "ponger".to_string())]),
                     }],
                 ),
                 (
@@ -113,7 +112,7 @@ port = 3000
                     vec![PhysicalOp {
                         nodename: "node1".into(),
                         actor_name: "ponger".into(),
-                        payload: HashMap::new()
+                        payload: HashMap::new(),
                     }],
                 ),
             ]),
