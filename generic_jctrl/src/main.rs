@@ -55,7 +55,7 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-
+    use serde::de::Unexpected::Option;
     use super::*;
     use reactor_jobm::placement::PhysicalOp;
 
@@ -77,18 +77,13 @@ port = 3000
 
 [placement]
   [[placement.pinger]]
-  logical = { name = "pinger", lib_name = "ping_pong_actor" }
   nodename = "node1"
   actor_name = "pinger"
-  idx = 0
-  peers = 1
+  other = "ponger"
 
   [[placement.ponger]]
-  logical = { name = "ponger", lib_name = "ping_pong_actor" }
   nodename = "node1"
   actor_name = "ponger"
-  idx = 0
-  peers = 1
 "#;
 
         let parsed: JobManifest = toml::from_str(toml_data).expect("Failed to parse");
@@ -108,27 +103,17 @@ port = 3000
                 (
                     "pinger".into(),
                     vec![PhysicalOp {
-                        logical: LogicalOp {
-                            name: "pinger".into(),
-                            lib_name: "ping_pong_actor".into(),
-                        },
                         nodename: "node1".into(),
                         actor_name: "pinger".into(),
-                        idx: 0,
-                        peers: 1,
+                        payload: HashMap::from([("other".to_string(), "ponger".to_string())])
                     }],
                 ),
                 (
                     "ponger".into(),
                     vec![PhysicalOp {
-                        logical: LogicalOp {
-                            name: "ponger".into(),
-                            lib_name: "ping_pong_actor".into(),
-                        },
                         nodename: "node1".into(),
                         actor_name: "ponger".into(),
-                        idx: 0,
-                        peers: 1,
+                        payload: HashMap::new()
                     }],
                 ),
             ]),

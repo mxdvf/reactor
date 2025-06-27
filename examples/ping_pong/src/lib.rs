@@ -5,7 +5,7 @@ use reactor_actor::ControlReq;
 use tokio::sync::{mpsc};
 
 use std::{sync::Arc, time::Duration, sync::Mutex};
-
+use std::collections::HashMap;
 use bincode::{Decode, Encode};
 use reactor_actor::{
     ActorAddr, ChannelAction, DecodeErr, Msg, RState, SState,
@@ -175,19 +175,12 @@ lazy_static::lazy_static! {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn pinger(
+pub extern "C" fn pingpong(
     inst_recv: mpsc::UnboundedReceiver<ControlInst>,
     req_send: mpsc::Sender<ControlReq>,
     actor_name: &'static str,
+    mut payload: HashMap<String, String>
 ) {
-    RUNTIME.spawn(actor(inst_recv, req_send, actor_name, "ponger"));
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn ponger(
-    inst_recv: mpsc::UnboundedReceiver<ControlInst>,
-    req_send: mpsc::Sender<ControlReq>,
-    actor_name: &'static str,
-) {
-    RUNTIME.spawn(actor(inst_recv, req_send, actor_name, "pinger"));
+    let other = payload.remove("other").unwrap();
+    RUNTIME.spawn(actor(inst_recv, req_send, actor_name, other.leak()));
 }

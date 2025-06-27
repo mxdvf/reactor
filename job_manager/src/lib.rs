@@ -52,6 +52,7 @@ impl NodeHandle {
                 actor_name: physical_op.actor_name.clone(),
                 operator_name: logical_op.name.clone(),
                 lib_name: logical_op.lib_name.clone(),
+                payload: physical_op.payload.clone(),
             },
         )
         .await

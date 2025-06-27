@@ -1,9 +1,5 @@
 [[ops]]
-name = "pinger"
-lib_name = "ping_pong_actor"
-
-[[ops]]
-name = "ponger"
+name = "pingpong"
 lib_name = "ping_pong_actor"
 
 [[nodes]]
@@ -12,14 +8,12 @@ hostname = "0.0.0.0"
 port = 3000
 
 [placement]
-  [[placement.pinger]]
+  [[placement.pingpong]]
   nodename = "node1"
   actor_name = "pinger"
-  idx = 0
-  peers = 1
+  other = "ponger"
 
-  [[placement.ponger]]
+  [[placement.pingpong]]
   nodename = "node1"
   actor_name = "ponger"
-  idx = 0
-  peers = 1
+  other = "pinger"

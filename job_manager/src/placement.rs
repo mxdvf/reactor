@@ -45,8 +45,9 @@ pub struct LogicalOp {
 pub struct PhysicalOp {
     pub nodename: String,
     pub actor_name: String,
-    pub idx: u32,
-    pub peers: u32,
+
+    #[serde(flatten)]
+    pub payload: HashMap<String, String>
 }
 
 /// Takes logical Op  and places it on single or multiple Nodes. Returns list of Physical operator where a logical operator is placed

@@ -31,6 +31,7 @@ pub(crate) struct SpawnArgs {
     pub actor_name: String,
     pub operator_name: String,
     pub lib_name: String,
+    pub payload: HashMap<String, String>
 }
 
 #[cfg_attr(feature = "swagger", derive(ToSchema))]
@@ -114,6 +115,7 @@ async fn start_actor(
             resp_tx: tx,
             op_name: args.operator_name,
             lib_name: args.lib_name,
+            payload: args.payload,
         })
         .unwrap();
     let status = rx.await.unwrap();
