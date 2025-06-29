@@ -13,7 +13,10 @@ use tokio::{
 };
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 
-use crate::{ActorAddr, Connection, ControlReq, Msg};
+use crate::{
+    ActorAddr, Msg,
+    node_comm::{Connection, ControlReq},
+};
 
 use super::{ChannelAction, RState, SState, State};
 

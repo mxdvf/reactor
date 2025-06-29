@@ -1,33 +1,23 @@
-use std::{
-    any::Any,
-    collections::HashMap,
-    net::{Ipv4Addr, SocketAddr},
-    pin::Pin,
-    sync::{Arc, Mutex},
-};
+use std::marker::PhantomData;
 
-use err::{ActorError, RecieverErr};
-use futures::{StreamExt, future::join_all};
-// use reactor_node::{ControlInst, ControlReq};
-use socket2::{Domain, Socket, Type};
+use err::ActorError;
+use futures::future::join_all;
+use recv::rx2;
+use send::tx2;
 use tokio::{
-    io::AsyncRead,
-    net::TcpListener,
-    sync::{
-        mpsc::{self},
-        oneshot,
-    },
-    task::{JoinHandle, JoinSet},
+    sync::mpsc::{self},
+    task::JoinHandle,
 };
-use tokio_util::{
-    codec::{Decoder, Encoder, FramedRead},
-    sync::CancellationToken,
-};
+use tokio_util::codec::{Decoder, Encoder};
 pub use tracing_shared::setup_shared_logger_ref;
 // use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub mod common;
 mod err;
+mod node_comm;
+mod recv;
+mod send;
+pub use node_comm::{Connection, ControlInst, ControlReq, NodeComm};
 
 /// State of the Processor
 pub trait State: Default + Send {}
@@ -37,14 +27,10 @@ pub trait RState: Default + Send {}
 pub trait SState: Default + Send {}
 
 /// Messages that can flow between the actors.
-pub trait Msg: Send + std::fmt::Debug {}
+pub trait Msg: Send + Sync + std::fmt::Debug + 'static + Clone {}
 
 /// Addr of the actors
 pub type ActorAddr = &'static str;
-
-/// Type of channel that is used to send message from one local actor to the other.
-pub type LocalChannelTx = mpsc::Sender<Box<dyn Any + Send>>;
-pub type LocalChannelRx = mpsc::Receiver<Box<dyn Any + Send>>;
 
 /// Represents the action to take after receiving and decoding a message from a channel.
 ///
@@ -88,26 +74,188 @@ enum R2PMsg<T> {
 }
 
 /// Instructions that are sent by the local controller to the actor
-pub enum ControlInst {
-    StartLocalRecv(LocalChannelRx),
-    StartTcpRecv(u16),
-    Stop,
-}
+// pub enum ControlInst {
+//     StartLocalRecv(LocalChannelRx),
+//     StartTcpRecv(u16),
+//     Stop,
+// }
 
-/// Type of connection
-#[derive(Debug)]
-pub enum Connection {
-    Remote(SocketAddr),
-    Local(LocalChannelTx),
-}
+// /// Type of connection
+// #[derive(Debug)]
+// pub enum Connection {
+//     Remote(SocketAddr),
+//     Local(LocalChannelTx),
+// }
 
 /// Requests that can be sent to the local controller by the actor or some external
 /// API
-pub enum ControlReq {
-    Resolve {
-        addr: ActorAddr,
-        resp_tx: oneshot::Sender<Connection>,
-    },
+// pub enum ControlReq {
+//     Resolve {
+//         addr: ActorAddr,
+//         resp_tx: oneshot::Sender<Connection>,
+//     },
+// }
+
+pub trait ActorRecv: Send + 'static {
+    type IMsg: Msg;
+    fn after_recv(
+        &mut self,
+        input: &Self::IMsg,
+    ) -> impl std::future::Future<Output = ChannelAction> + Send;
+}
+
+pub struct NoOpActorRecv<M> {
+    phantom_data: PhantomData<M>,
+}
+impl<M: Msg> ActorRecv for NoOpActorRecv<M> {
+    type IMsg = M;
+    async fn after_recv(&mut self, _input: &Self::IMsg) -> ChannelAction {
+        panic!("This Shouldn't be used")
+    }
+}
+
+pub trait ActorProcess: Send + 'static {
+    type IMsg: Msg;
+    type OMsg: Msg;
+
+    fn process(&mut self, input: Self::IMsg) -> Vec<Self::OMsg>;
+}
+
+pub trait ActorSend: Send + 'static {
+    type OMsg: Msg;
+    fn before_send(
+        &mut self,
+        output: &Self::OMsg,
+    ) -> impl std::future::Future<Output = &Vec<ActorAddr>> + Send;
+}
+pub struct NoOpActorSend<M> {
+    phantom_data: PhantomData<M>,
+}
+impl<M: Msg> ActorSend for NoOpActorSend<M> {
+    type OMsg = M;
+
+    async fn before_send(&mut self, _output: &Self::OMsg) -> &Vec<ActorAddr> {
+        panic!("This Shouldn't be used")
+    }
+}
+
+pub struct Behaviour<R, P, S, M> {
+    recv: Option<R>,
+    proc: P,
+    send: Option<S>,
+    generators: Vec<Box<dyn Iterator<Item = M> + Send>>,
+}
+impl<P, S, M> Behaviour<NoOpActorRecv<M>, P, S, M> {
+    pub fn with_send(proc: P, send: S) -> Behaviour<NoOpActorRecv<M>, P, S, M> {
+        Behaviour {
+            recv: None,
+            proc,
+            send: Some(send),
+            generators: Vec::new(),
+        }
+    }
+}
+
+impl<R, P, M> Behaviour<R, P, NoOpActorSend<M>, M> {
+    pub fn with_recv(proc: P, recv: R) -> Behaviour<R, P, NoOpActorSend<M>, M> {
+        Behaviour {
+            recv: Some(recv),
+            proc,
+            send: None,
+            generators: Vec::new(),
+        }
+    }
+}
+
+impl<R, P, S, M> Behaviour<R, P, S, M> {
+    pub fn with_recv_send(proc: P, recv: R, send: S) -> Self {
+        Behaviour {
+            recv: Some(recv),
+            proc,
+            send: Some(send),
+            generators: Vec::new(),
+        }
+    }
+
+    pub fn add_generator(&mut self, generator: Box<dyn Iterator<Item = M> + Send>) {
+        self.generators.push(generator);
+    }
+}
+
+impl<R, P, S, M> Behaviour<R, P, S, M> {
+    fn take_recv(&mut self) -> Option<R> {
+        self.recv.take()
+    }
+    fn take_send(&mut self) -> Option<S> {
+        self.send.take()
+    }
+    fn take_generators(&mut self) -> Vec<Box<dyn Iterator<Item = M> + Send>> {
+        std::mem::take(&mut self.generators)
+    }
+}
+
+pub async fn actor<I, O, R, P, S, CD>(
+    addr: ActorAddr,
+    mut behaviour: Behaviour<R, P, S, I>,
+    codec: CD,
+    node_handle: NodeComm,
+) -> Result<(), ActorError>
+where
+    I: Msg,
+    O: Msg,
+    R: ActorRecv<IMsg = I>,
+    P: ActorProcess<IMsg = I, OMsg = O>,
+    S: ActorSend<OMsg = O>,
+    CD: Encoder<O> + Decoder<Item = I, Error = DecodeErr> + Send + Sync + Clone + 'static,
+{
+    let my_addr = addr.to_string();
+    let (r2p_tx, mut r2p_rx) = mpsc::unbounded_channel::<R2PMsg<I>>();
+    let (p2s_tx, p2s_rx) = mpsc::unbounded_channel::<O>();
+
+    let (controller_rx, controller_tx) = node_handle.split();
+
+    let reciever = behaviour.take_recv();
+    let sender = behaviour.take_send();
+    let mut generators = behaviour.take_generators();
+    let mut processor = behaviour.proc;
+
+    let gen_handles: Vec<tokio::task::JoinHandle<_>> = generators
+        .drain(..)
+        .map(|gene| tokio::spawn(generator(gene, r2p_tx.clone())))
+        .collect();
+
+    let rx_handle = tokio::spawn(rx2(
+        my_addr.clone().leak(),
+        reciever,
+        r2p_tx,
+        codec.clone(),
+        controller_rx,
+    ));
+
+    let addr = my_addr.clone();
+    let proc_handle: JoinHandle<Result<(), ActorError>> =
+        tokio::task::spawn_blocking(move || -> Result<(), ActorError> {
+            tracing::info!("[ACTOR][{}] Processor Started", addr);
+            while let Some(i) = r2p_rx.blocking_recv() {
+                if let R2PMsg::Msg(msg) = i {
+                    let processed_messages = processor.process(msg);
+
+                    for message in processed_messages {
+                        p2s_tx.send(message).map_err(|_| ActorError::P2SErr)?;
+                    }
+                } else {
+                    break;
+                }
+            }
+            tracing::info!("[ACTOR][{}] Processor Ended", addr);
+            Ok(())
+        });
+    let tx_handle = tokio::spawn(tx2(my_addr.leak(), sender, p2s_rx, controller_tx, codec));
+    rx_handle.await??;
+    proc_handle.await??;
+    tx_handle.await?;
+    join_all(gen_handles).await;
+    Ok(())
 }
 
 /// Asynchronously drives the message processing pipeline from input to output distribution.
@@ -150,163 +298,163 @@ pub enum ControlReq {
 ///
 /// # Panics
 /// - Will panic if sending to the processing or sending channel fails (should not happen unless channels are closed).
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
-pub async fn actor<I, S, RS, CD, SS, O, AR, P, BS>(
-    my_addr: ActorAddr,
-    mut generators: Vec<Box<dyn Iterator<Item = I> + Send>>,
-    rs: RS,
-    after_recieve: AR,
-    mut processor_state: S,
-    processor: P,
-    bs: SS,
-    before_send: BS,
-    codec: CD,
-    controller_rx: mpsc::UnboundedReceiver<ControlInst>,
-    controller_tx: mpsc::Sender<ControlReq>,
-    sender_task: fn(
-        ActorAddr,
-        mpsc::UnboundedReceiver<O>,
-        CD,
-        mpsc::Sender<ControlReq>,
-    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>,
-) -> Result<(), ActorError>
-where
-    I: Msg + 'static,
-    S: State + 'static,
-    RS: RState + 'static,
-    SS: SState + 'static,
-    O: Msg + 'static,
-    // AR: Fn(&I, &Arc<Mutex<CS>>) -> Fut + Clone + Send + 'static,
-    // Fut: Future<Output = ChannelAction> + Send + 'static,
-    AR: Fn(&I, &Arc<std::sync::Mutex<RS>>) -> ChannelAction + Send + Sync + 'static + Clone,
-    P: Fn(I, &mut S) -> Vec<O> + Send + 'static,
-    BS: Fn(&O, &mut SS) -> ActorAddr + Send + Sync + 'static,
-    CD: Encoder<O> + Decoder<Item = I, Error = DecodeErr> + Send + Sync + Clone + 'static,
-{
-    let (r2p_tx, mut r2p_rx) = mpsc::unbounded_channel::<R2PMsg<I>>();
-    let (p2s_tx, p2s_rx) = mpsc::unbounded_channel::<O>();
+// #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+// pub async fn actor<I, S, RS, CD, SS, O, AR, P, BS>(
+//     my_addr: ActorAddr,
+//     mut generators: Vec<Box<dyn Iterator<Item = I> + Send>>,
+//     rs: RS,
+//     after_recieve: AR,
+//     mut processor_state: S,
+//     processor: P,
+//     bs: SS,
+//     before_send: BS,
+//     codec: CD,
+//     controller_rx: mpsc::UnboundedReceiver<ControlInst>,
+//     controller_tx: mpsc::Sender<ControlReq>,
+//     sender_task: fn(
+//         ActorAddr,
+//         mpsc::UnboundedReceiver<O>,
+//         CD,
+//         mpsc::Sender<ControlReq>,
+//     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>,
+// ) -> Result<(), ActorError>
+// where
+//     I: Msg + 'static,
+//     S: State + 'static,
+//     RS: RState + 'static,
+//     SS: SState + 'static,
+//     O: Msg + 'static,
+//     // AR: Fn(&I, &Arc<Mutex<CS>>) -> Fut + Clone + Send + 'static,
+//     // Fut: Future<Output = ChannelAction> + Send + 'static,
+//     AR: Fn(&I, &Arc<std::sync::Mutex<RS>>) -> ChannelAction + Send + Sync + 'static + Clone,
+//     P: Fn(I, &mut S) -> Vec<O> + Send + 'static,
+//     BS: Fn(&O, &mut SS) -> ActorAddr + Send + Sync + 'static,
+//     CD: Encoder<O> + Decoder<Item = I, Error = DecodeErr> + Send + Sync + Clone + 'static,
+// {
+//     let (r2p_tx, mut r2p_rx) = mpsc::unbounded_channel::<R2PMsg<I>>();
+//     let (p2s_tx, p2s_rx) = mpsc::unbounded_channel::<O>();
 
-    let gen_handles: Vec<tokio::task::JoinHandle<_>> = generators
-        .drain(..)
-        .map(|gene| tokio::spawn(generator(gene, r2p_tx.clone())))
-        .collect();
+//     let gen_handles: Vec<tokio::task::JoinHandle<_>> = generators
+//         .drain(..)
+//         .map(|gene| tokio::spawn(generator(gene, r2p_tx.clone())))
+//         .collect();
 
-    let rx_handle = tokio::spawn(rx(
-        my_addr,
-        after_recieve,
-        rs,
-        r2p_tx,
-        codec.clone(),
-        controller_rx,
-    ));
+//     let rx_handle = tokio::spawn(rx(
+//         my_addr,
+//         after_recieve,
+//         rs,
+//         r2p_tx,
+//         codec.clone(),
+//         controller_rx,
+//     ));
 
-    let proc_handle: JoinHandle<Result<(), ActorError>> =
-        tokio::task::spawn_blocking(move || -> Result<(), ActorError> {
-            tracing::info!("[ACTOR][{}] Processor Started", my_addr);
-            while let Some(i) = r2p_rx.blocking_recv() {
-                if let R2PMsg::Msg(msg) = i {
-                    let processed_messages = processor(msg, &mut processor_state);
+//     let proc_handle: JoinHandle<Result<(), ActorError>> =
+//         tokio::task::spawn_blocking(move || -> Result<(), ActorError> {
+//             tracing::info!("[ACTOR][{}] Processor Started", my_addr);
+//             while let Some(i) = r2p_rx.blocking_recv() {
+//                 if let R2PMsg::Msg(msg) = i {
+//                     let processed_messages = processor(msg, &mut processor_state);
 
-                    for message in processed_messages {
-                        p2s_tx.send(message).map_err(|_| ActorError::P2SErr)?;
-                    }
-                } else {
-                    break;
-                }
-            }
-            tracing::info!("[ACTOR][{}] Processor Ended", my_addr);
-            Ok(())
-        });
-    let tx_handle = tokio::spawn(tx(
-        my_addr,
-        before_send,
-        bs,
-        p2s_rx,
-        controller_tx,
-        codec,
-        sender_task,
-    ));
-    rx_handle.await??;
-    proc_handle.await??;
-    tx_handle.await?;
-    join_all(gen_handles).await;
-    Ok(())
-}
+//                     for message in processed_messages {
+//                         p2s_tx.send(message).map_err(|_| ActorError::P2SErr)?;
+//                     }
+//                 } else {
+//                     break;
+//                 }
+//             }
+//             tracing::info!("[ACTOR][{}] Processor Ended", my_addr);
+//             Ok(())
+//         });
+//     let tx_handle = tokio::spawn(tx(
+//         my_addr,
+//         before_send,
+//         bs,
+//         p2s_rx,
+//         controller_tx,
+//         codec,
+//         sender_task,
+//     ));
+//     rx_handle.await??;
+//     proc_handle.await??;
+//     tx_handle.await?;
+//     join_all(gen_handles).await;
+//     Ok(())
+// }
 
-async fn remote_parent_recv_subtask<M, C, D, AR, RX>(
-    after_recv: AR,
-    row_q: mpsc::UnboundedSender<R2PMsg<M>>,
-    cstate: Arc<Mutex<C>>,
-    mut framed_reader: FramedRead<RX, D>,
-) where
-    M: Msg,
-    C: RState,
-    D: Decoder<Item = M>,
-    // AR: Fn(&M, &Arc<Mutex<C>>) -> Fut,
-    AR: Fn(&M, &Arc<Mutex<C>>) -> ChannelAction + 'static + Clone,
-    RX: AsyncRead + Unpin,
-    // Fut: Future<Output = ChannelAction> + Send,
-{
-    tracing::info!("[ACTOR] SubRx Started");
-    loop {
-        if let Some(Ok(msg)) = framed_reader.next().await {
-            match after_recv(&msg, &cstate) {
-                ChannelAction::PASS => {}
-                ChannelAction::PANIC => {
-                    panic!()
-                }
-                ChannelAction::DROP => {
-                    continue;
-                }
-                ChannelAction::SYNC(_) => todo!(),
-                ChannelAction::CLOSE => {
-                    break;
-                }
-            }
-            if row_q.send(R2PMsg::Msg(msg)).is_err() {
-                break;
-            }
-        }
-    }
-    tracing::info!("[ACTOR] SubRx Ended");
-}
+// async fn remote_parent_recv_subtask<M, C, D, AR, RX>(
+//     after_recv: AR,
+//     row_q: mpsc::UnboundedSender<R2PMsg<M>>,
+//     cstate: Arc<Mutex<C>>,
+//     mut framed_reader: FramedRead<RX, D>,
+// ) where
+//     M: Msg,
+//     C: RState,
+//     D: Decoder<Item = M>,
+//     // AR: Fn(&M, &Arc<Mutex<C>>) -> Fut,
+//     AR: Fn(&M, &Arc<Mutex<C>>) -> ChannelAction + 'static + Clone,
+//     RX: AsyncRead + Unpin,
+//     // Fut: Future<Output = ChannelAction> + Send,
+// {
+//     tracing::info!("[ACTOR] SubRx Started");
+//     loop {
+//         if let Some(Ok(msg)) = framed_reader.next().await {
+//             match after_recv(&msg, &cstate) {
+//                 ChannelAction::PASS => {}
+//                 ChannelAction::PANIC => {
+//                     panic!()
+//                 }
+//                 ChannelAction::DROP => {
+//                     continue;
+//                 }
+//                 ChannelAction::SYNC(_) => todo!(),
+//                 ChannelAction::CLOSE => {
+//                     break;
+//                 }
+//             }
+//             if row_q.send(R2PMsg::Msg(msg)).is_err() {
+//                 break;
+//             }
+//         }
+//     }
+//     tracing::info!("[ACTOR] SubRx Ended");
+// }
 
-async fn local_parent_recv_subtask<M, C, AR>(
-    after_recv: AR,
-    row_q: mpsc::UnboundedSender<R2PMsg<M>>,
-    cstate: Arc<Mutex<C>>,
-    mut local_rx: LocalChannelRx,
-) where
-    M: Msg + 'static,
-    C: RState,
-    // AR: Fn(&M, &Arc<Mutex<C>>) -> Fut,
-    AR: Fn(&M, &Arc<Mutex<C>>) -> ChannelAction + 'static + Clone,
-    // Fut: Future<Output = ChannelAction> + Send,
-{
-    tracing::info!("[ACTOR] SubRx Started");
-    loop {
-        if let Some(msg) = local_rx.recv().await {
-            let msg = msg.downcast::<M>().unwrap();
-            match after_recv(&msg, &cstate) {
-                ChannelAction::PASS => {}
-                ChannelAction::PANIC => {
-                    panic!()
-                }
-                ChannelAction::DROP => {
-                    continue;
-                }
-                ChannelAction::SYNC(_) => todo!(),
-                ChannelAction::CLOSE => {
-                    break;
-                }
-            }
-            if row_q.send(R2PMsg::Msg(*msg)).is_err() {
-                break;
-            }
-        }
-    }
-    tracing::info!("[ACTOR] SubRx Ended");
-}
+// async fn local_parent_recv_subtask<M, C, AR>(
+//     after_recv: AR,
+//     row_q: mpsc::UnboundedSender<R2PMsg<M>>,
+//     cstate: Arc<Mutex<C>>,
+//     mut local_rx: LocalChannelRx,
+// ) where
+//     M: Msg + 'static,
+//     C: RState,
+//     // AR: Fn(&M, &Arc<Mutex<C>>) -> Fut,
+//     AR: Fn(&M, &Arc<Mutex<C>>) -> ChannelAction + 'static + Clone,
+//     // Fut: Future<Output = ChannelAction> + Send,
+// {
+//     tracing::info!("[ACTOR] SubRx Started");
+//     loop {
+//         if let Some(msg) = local_rx.recv().await {
+//             let msg = msg.downcast::<M>().unwrap();
+//             match after_recv(&msg, &cstate) {
+//                 ChannelAction::PASS => {}
+//                 ChannelAction::PANIC => {
+//                     panic!()
+//                 }
+//                 ChannelAction::DROP => {
+//                     continue;
+//                 }
+//                 ChannelAction::SYNC(_) => todo!(),
+//                 ChannelAction::CLOSE => {
+//                     break;
+//                 }
+//             }
+//             if row_q.send(R2PMsg::Msg(*msg)).is_err() {
+//                 break;
+//             }
+//         }
+//     }
+//     tracing::info!("[ACTOR] SubRx Ended");
+// }
 /// Spawns tasks to receive messages from incoming network or local control channels,
 /// decode them, and forward them for processing based on channel state.
 ///
@@ -344,100 +492,100 @@ async fn local_parent_recv_subtask<M, C, AR>(
 ///   Spawns tasks to receive messages from incoming network or local control channels,
 ///   decode them, and forward them for processing based on channel state.
 ///
-async fn rx<M, CS, AR, D>(
-    my_addr: ActorAddr,
-    after_recv: AR,
-    channel_state: CS,
-    p_tx: mpsc::UnboundedSender<R2PMsg<M>>,
-    decoder: D,
-    mut controller_rx: mpsc::UnboundedReceiver<ControlInst>,
-) -> Result<(), ActorError>
-where
-    M: Msg + 'static,
-    CS: RState + 'static,
-    // AR: Fn(&M, &Arc<Mutex<CS>>) -> Fut + Clone + Send + 'static,
-    // Fut: Future<Output = ChannelAction> + Send + 'static,
-    AR: Fn(&M, &Arc<Mutex<CS>>) -> ChannelAction + Send + Sync + 'static + Clone,
-    D: Decoder<Item = M, Error = DecodeErr> + Clone + Send + Sync + 'static,
-{
-    tracing::info!("[ACTOR][{}] Rx Started", my_addr);
-    let cancel_token = CancellationToken::new();
-    let mut tcp_server_set: JoinSet<Result<(), ActorError>> = JoinSet::new();
-    let mut local_recv_set = JoinSet::new();
-    let channel_state = Arc::new(Mutex::new(channel_state));
+// async fn rx<M, CS, AR, D>(
+//     my_addr: ActorAddr,
+//     after_recv: AR,
+//     channel_state: CS,
+//     p_tx: mpsc::UnboundedSender<R2PMsg<M>>,
+//     decoder: D,
+//     mut controller_rx: mpsc::UnboundedReceiver<ControlInst>,
+// ) -> Result<(), ActorError>
+// where
+//     M: Msg + 'static,
+//     CS: RState + 'static,
+//     // AR: Fn(&M, &Arc<Mutex<CS>>) -> Fut + Clone + Send + 'static,
+//     // Fut: Future<Output = ChannelAction> + Send + 'static,
+//     AR: Fn(&M, &Arc<Mutex<CS>>) -> ChannelAction + Send + Sync + 'static + Clone,
+//     D: Decoder<Item = M, Error = DecodeErr> + Clone + Send + Sync + 'static,
+// {
+//     tracing::info!("[ACTOR][{}] Rx Started", my_addr);
+//     let cancel_token = CancellationToken::new();
+//     let mut tcp_server_set: JoinSet<Result<(), ActorError>> = JoinSet::new();
+//     let mut local_recv_set = JoinSet::new();
+//     let channel_state = Arc::new(Mutex::new(channel_state));
 
-    while let Some(msg) = controller_rx.recv().await {
-        match msg {
-            ControlInst::StartTcpRecv(port) => {
-                let decoder_clone = decoder.clone();
-                let cstate_clone = channel_state.clone();
-                let after_recv_clone = after_recv.clone();
-                let p_tx_clone = p_tx.clone();
-                let cancel_token = cancel_token.clone();
-                tcp_server_set.spawn(async move {
-                    let socket = Socket::new(Domain::IPV4, Type::STREAM, None)
-                        .map_err(|e| ActorError::RecieverErr(RecieverErr::TcpStartErr(e)))?;
-                    socket
-                        .set_reuse_port(true)
-                        .map_err(|e| ActorError::RecieverErr(RecieverErr::TcpStartErr(e)))?;
-                    socket
-                        .bind(&SocketAddr::from((Ipv4Addr::new(0, 0, 0, 0), port)).into())
-                        .map_err(|e| ActorError::RecieverErr(RecieverErr::TcpStartErr(e)))?;
-                    socket
-                        .listen(128)
-                        .map_err(|e| ActorError::RecieverErr(RecieverErr::TcpStartErr(e)))?;
-                    socket
-                        .set_nonblocking(true)
-                        .map_err(|e| ActorError::RecieverErr(RecieverErr::TcpStartErr(e)))?;
+//     while let Some(msg) = controller_rx.recv().await {
+//         match msg {
+//             ControlInst::StartTcpRecv(port) => {
+//                 let decoder_clone = decoder.clone();
+//                 let cstate_clone = channel_state.clone();
+//                 let after_recv_clone = after_recv.clone();
+//                 let p_tx_clone = p_tx.clone();
+//                 let cancel_token = cancel_token.clone();
+//                 tcp_server_set.spawn(async move {
+//                     let socket = Socket::new(Domain::IPV4, Type::STREAM, None)
+//                         .map_err(|e| ActorError::RecieverErr(RecieverErr::TcpStartErr(e)))?;
+//                     socket
+//                         .set_reuse_port(true)
+//                         .map_err(|e| ActorError::RecieverErr(RecieverErr::TcpStartErr(e)))?;
+//                     socket
+//                         .bind(&SocketAddr::from((Ipv4Addr::new(0, 0, 0, 0), port)).into())
+//                         .map_err(|e| ActorError::RecieverErr(RecieverErr::TcpStartErr(e)))?;
+//                     socket
+//                         .listen(128)
+//                         .map_err(|e| ActorError::RecieverErr(RecieverErr::TcpStartErr(e)))?;
+//                     socket
+//                         .set_nonblocking(true)
+//                         .map_err(|e| ActorError::RecieverErr(RecieverErr::TcpStartErr(e)))?;
 
-                    let parent_listener = TcpListener::from_std(socket.into())
-                        .map_err(|e| ActorError::RecieverErr(RecieverErr::TcpStartErr(e)))?;
+//                     let parent_listener = TcpListener::from_std(socket.into())
+//                         .map_err(|e| ActorError::RecieverErr(RecieverErr::TcpStartErr(e)))?;
 
-                    let mut remote_recv_set = JoinSet::new();
-                    loop {
-                        tokio::select! {
-                            _ = cancel_token.cancelled() => {
-                                break;
-                            }
-                            accept_result = parent_listener.accept() => {
-                                let (socket, _) = accept_result.map_err(|e| {
-                                    ActorError::RecieverErr(RecieverErr::TcpStartErr(e))
-                                })?;
-                                let (rx, _) = socket.into_split();
-                                let framed_reader = FramedRead::new(rx, decoder_clone.clone());
-                                remote_recv_set.spawn(remote_parent_recv_subtask(
-                                    after_recv_clone.clone(),
-                                    p_tx_clone.clone(),
-                                    cstate_clone.clone(),
-                                    framed_reader,
-                                ));
-                            }
-                        }
-                    }
-                    remote_recv_set.abort_all();
-                    Ok(())
-                });
-            }
-            ControlInst::StartLocalRecv(local_rx) => {
-                local_recv_set.spawn(local_parent_recv_subtask(
-                    after_recv.clone(),
-                    p_tx.clone(),
-                    channel_state.clone(),
-                    local_rx,
-                ));
-            }
-            ControlInst::Stop => {
-                cancel_token.cancel();
-                p_tx.send(R2PMsg::Exit).map_err(|_| ActorError::R2PErr)?;
-                break;
-            }
-        }
-    }
-    tcp_server_set.abort_all();
-    local_recv_set.abort_all();
-    tracing::info!("[ACTOR][{}] Rx Ended", my_addr);
-    Ok(())
-}
+//                     let mut remote_recv_set = JoinSet::new();
+//                     loop {
+//                         tokio::select! {
+//                             _ = cancel_token.cancelled() => {
+//                                 break;
+//                             }
+//                             accept_result = parent_listener.accept() => {
+//                                 let (socket, _) = accept_result.map_err(|e| {
+//                                     ActorError::RecieverErr(RecieverErr::TcpStartErr(e))
+//                                 })?;
+//                                 let (rx, _) = socket.into_split();
+//                                 let framed_reader = FramedRead::new(rx, decoder_clone.clone());
+//                                 remote_recv_set.spawn(remote_parent_recv_subtask(
+//                                     after_recv_clone.clone(),
+//                                     p_tx_clone.clone(),
+//                                     cstate_clone.clone(),
+//                                     framed_reader,
+//                                 ));
+//                             }
+//                         }
+//                     }
+//                     remote_recv_set.abort_all();
+//                     Ok(())
+//                 });
+//             }
+//             ControlInst::StartLocalRecv(local_rx) => {
+//                 local_recv_set.spawn(local_parent_recv_subtask(
+//                     after_recv.clone(),
+//                     p_tx.clone(),
+//                     channel_state.clone(),
+//                     local_rx,
+//                 ));
+//             }
+//             ControlInst::Stop => {
+//                 cancel_token.cancel();
+//                 p_tx.send(R2PMsg::Exit).map_err(|_| ActorError::R2PErr)?;
+//                 break;
+//             }
+//         }
+//     }
+//     tcp_server_set.abort_all();
+//     local_recv_set.abort_all();
+//     tracing::info!("[ACTOR][{}] Rx Ended", my_addr);
+//     Ok(())
+// }
 
 type SendBuffer<M> = mpsc::UnboundedSender<M>;
 
@@ -462,43 +610,43 @@ type SendBuffer<M> = mpsc::UnboundedSender<M>;
 /// - `p_rx`: An `UnboundedReceiver<M>` providing messages to dispatch.
 /// - `sender_task`: A function that returns a pinned future handling messages for a given `Addr`.
 ///
-#[allow(clippy::type_complexity)]
-async fn tx<M, C, BS, RS>(
-    my_addr: ActorAddr,
-    before_send: BS,
-    mut state: RS,
-    mut p_rx: mpsc::UnboundedReceiver<M>,
-    controller_tx: mpsc::Sender<ControlReq>,
-    codec: C,
-    sender_task: fn(
-        ActorAddr,
-        mpsc::UnboundedReceiver<M>,
-        C,
-        mpsc::Sender<ControlReq>,
-    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>,
-) where
-    M: Msg + 'static + Send,
-    RS: SState,
-    BS: Fn(&M, &mut RS) -> ActorAddr,
-    C: Encoder<M> + 'static + Send + Clone,
-{
-    let mut addr_to_buff: HashMap<ActorAddr, SendBuffer<M>> = HashMap::new();
+// #[allow(clippy::type_complexity)]
+// async fn tx<M, C, BS, RS>(
+//     my_addr: ActorAddr,
+//     before_send: BS,
+//     mut state: RS,
+//     mut p_rx: mpsc::UnboundedReceiver<M>,
+//     controller_tx: mpsc::Sender<ControlReq>,
+//     codec: C,
+//     sender_task: fn(
+//         ActorAddr,
+//         mpsc::UnboundedReceiver<M>,
+//         C,
+//         mpsc::Sender<ControlReq>,
+//     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>,
+// ) where
+//     M: Msg + 'static + Send,
+//     RS: SState,
+//     BS: Fn(&M, &mut RS) -> ActorAddr,
+//     C: Encoder<M> + 'static + Send + Clone,
+// {
+//     let mut addr_to_buff: HashMap<ActorAddr, SendBuffer<M>> = HashMap::new();
 
-    let mut sub_senders = JoinSet::new();
-    tracing::info!("[ACTOR][{}] Tx Started", my_addr);
-    while let Some(m) = p_rx.recv().await {
-        let addr = before_send(&m, &mut state);
-        let sender = addr_to_buff.entry(addr).or_insert_with(|| {
-            let (tx, rx) = mpsc::unbounded_channel::<M>();
-            let task = sender_task(addr, rx, codec.clone(), controller_tx.clone());
-            sub_senders.spawn(task);
-            tx
-        });
-        let _ = sender.send(m);
-    }
-    sub_senders.abort_all();
-    tracing::info!("[ACTOR][{}] Tx Ended", my_addr);
-}
+//     let mut sub_senders = JoinSet::new();
+//     tracing::info!("[ACTOR][{}] Tx Started", my_addr);
+//     while let Some(m) = p_rx.recv().await {
+//         let addr = before_send(&m, &mut state);
+//         let sender = addr_to_buff.entry(addr).or_insert_with(|| {
+//             let (tx, rx) = mpsc::unbounded_channel::<M>();
+//             let task = sender_task(addr, rx, codec.clone(), controller_tx.clone());
+//             sub_senders.spawn(task);
+//             tx
+//         });
+//         let _ = sender.send(m);
+//     }
+//     sub_senders.abort_all();
+//     tracing::info!("[ACTOR][{}] Tx Ended", my_addr);
+// }
 
 async fn generator<G, M>(
     generator: G,
