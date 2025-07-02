@@ -29,8 +29,12 @@ use rpc::webserver;
 mod op_lib_manager;
 
 pub type NodeAddr = &'static str;
-pub type ActorSpawnCB =
-    fn(mpsc::UnboundedReceiver<ControlInst>, mpsc::Sender<ControlReq>, ActorAddr, HashMap<String, String>);
+pub type ActorSpawnCB = fn(
+    mpsc::UnboundedReceiver<ControlInst>,
+    mpsc::Sender<ControlReq>,
+    ActorAddr,
+    Box<HashMap<String, String>>,
+);
 
 pub type SetupSharedLogger = fn(SharedLogger);
 
@@ -59,7 +63,7 @@ pub(crate) enum JobControllerReq {
         lib_name: String,
         op_name: String,
         resp_tx: oneshot::Sender<Option<SpawnResult>>,
-        payload: HashMap<String, String>
+        payload: HashMap<String, String>,
     },
     RemoteActorAdded {
         addr: ActorAddr,
@@ -195,8 +199,7 @@ async fn handle_job_req(
                 let logger = SharedLogger::new();
                 shared_logger(logger);
                 let op: libloading::Symbol<ActorSpawnCB> = lib.get(op_name.as_bytes()).unwrap();
-                op(control_rx, actor_contrl_tx.clone(), addr, payload);
-                //let port: u16 = 6000;
+                op(control_rx, actor_contrl_tx.clone(), addr, Box::new(payload));
                 resp_tx.send(Some(SpawnResult { port })).unwrap();
                 control_tx.send(ControlInst::StartTcpRecv(port)).unwrap();
                 local_actors.insert(addr, LocalActor { handle: control_tx });
@@ -336,7 +339,7 @@ async fn handle_job_req<CG: CodeGenerator + Send>(
             op_name,
             resp_tx,
             lib_name,
-            payload
+            payload,
         } => {
             log::info!("[Node] Spawing Actor {addr} with op: {op_name}");
             let (control_tx, control_rx) = unbounded_channel();

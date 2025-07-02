@@ -26,12 +26,12 @@ struct AppState {
 }
 
 #[cfg_attr(feature = "swagger", derive(ToSchema))]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub(crate) struct SpawnArgs {
     pub actor_name: String,
     pub operator_name: String,
     pub lib_name: String,
-    pub payload: HashMap<String, String>
+    pub payload: HashMap<String, String>,
 }
 
 #[cfg_attr(feature = "swagger", derive(ToSchema))]

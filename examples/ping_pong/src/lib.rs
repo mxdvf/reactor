@@ -179,7 +179,7 @@ pub extern "C" fn pingpong(
     inst_recv: mpsc::UnboundedReceiver<ControlInst>,
     req_send: mpsc::Sender<ControlReq>,
     actor_name: &'static str,
-    mut payload: HashMap<String, String>
+    mut payload: Box<HashMap<String, String>>
 ) {
     let other = payload.remove("other").unwrap();
     RUNTIME.spawn(actor(inst_recv, req_send, actor_name, other.leak()));
