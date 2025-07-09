@@ -36,8 +36,53 @@ pub trait RState: Default + Send {}
 /// State of the Sender
 pub trait SState: Default + Send {}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Priority {
+    High,
+    Medium,
+    Low,
+}
+
+impl Priority {
+    pub fn to_index(self) -> usize {
+        match self {
+            Priority::High => 0,
+            Priority::Medium => 1,
+            Priority::Low => 2,
+        }
+    }
+}
+
+impl Default for Priority {
+    fn default() -> Self {
+        Priority::Low
+    }
+}
+
+/*#[derive(Debug)]
+pub struct MyMessage {
+    pub priority: Option<Priority>,
+}*/
+
 /// Messages that can flow between the actors.
-pub trait Msg: Send + std::fmt::Debug {}
+//pub trait Msg: Send + std::fmt::Debug {}
+pub trait Msg: Send + std::fmt::Debug {
+    //fn priority(&self) -> Priority;
+    fn priority(&self) -> Priority {
+        Priority::default()
+    }
+}
+
+/*enum R2PMsg<T> {
+    Msg { value: T, priority: Priority },
+    Exit,
+}*/
+
+/*impl Msg for MyMessage {
+    fn priority(&self) -> Priority {
+        self.priority.unwrap_or(Priority::Low)
+    }
+}*/
 
 /// Addr of the actors
 pub type ActorAddr = &'static str;
@@ -183,40 +228,93 @@ where
     BS: Fn(&O, &mut SS) -> ActorAddr + Send + Sync + 'static,
     CD: Encoder<O> + Decoder<Item = I, Error = DecodeErr> + Send + Sync + Clone + 'static,
 {
-    let (r2p_tx, mut r2p_rx) = mpsc::unbounded_channel::<R2PMsg<I>>();
+    //let (r2p_tx, mut r2p_rx) = mpsc::unbounded_channel::<R2PMsg<I>>();
     let (p2s_tx, p2s_rx) = mpsc::unbounded_channel::<O>();
+    let mut priority_receivers: Vec<mpsc::UnboundedReceiver<R2PMsg<I>>> = vec![];
+    let mut priority_senders: Vec<mpsc::UnboundedSender<R2PMsg<I>>> = vec![];
 
+    for _ in &[Priority::High, Priority::Medium, Priority::Low] {
+        let (tx, rx) = mpsc::unbounded_channel();
+        priority_senders.push(tx);
+        priority_receivers.push(rx);
+    }
+
+    //TODO Don't assume to send the generator to the lowest priority channel.
     let gen_handles: Vec<tokio::task::JoinHandle<_>> = generators
         .drain(..)
-        .map(|gene| tokio::spawn(generator(gene, r2p_tx.clone())))
+        .map(|gene| {
+            tokio::spawn(generator(
+                gene,
+                priority_senders[Priority::default().to_index()].clone(),
+            ))
+        })
         .collect();
 
-    let rx_handle = tokio::spawn(rx(
+    /*let gen_handles: Vec<tokio::task::JoinHandle<_>> = generators
+    .drain(..)
+    .map(|gene| tokio::spawn(generator(gene, default_tx.clone())))
+    .collect();*/
+
+    /*let rx_handle = tokio::spawn(rx(
         my_addr,
         after_recieve,
         rs,
         r2p_tx,
         codec.clone(),
         controller_rx,
+    ));*/
+
+    let rx_handle = tokio::spawn(rx(
+        my_addr,
+        after_recieve,
+        rs,
+        //r2p_tx,
+        priority_senders,
+        codec.clone(),
+        controller_rx,
     ));
 
+    /*let proc_handle: JoinHandle<Result<(), ActorError>> =
+    tokio::task::spawn_blocking(move || -> Result<(), ActorError> {
+        tracing::info!("[ACTOR][{}] Processor Started", my_addr);
+        while let Some(i) = r2p_rx.blocking_recv() {
+            if let R2PMsg::Msg(msg) = i {
+                let processed_messages = processor(msg, &mut processor_state);
+
+                for message in processed_messages {
+                    p2s_tx.send(message).map_err(|_| ActorError::P2SErr)?;
+                }
+            } else {
+                break;
+            }
+        }
+        tracing::info!("[ACTOR][{}] Processor Ended", my_addr);
+        Ok(())
+    });*/
     let proc_handle: JoinHandle<Result<(), ActorError>> =
         tokio::task::spawn_blocking(move || -> Result<(), ActorError> {
             tracing::info!("[ACTOR][{}] Processor Started", my_addr);
-            while let Some(i) = r2p_rx.blocking_recv() {
-                if let R2PMsg::Msg(msg) = i {
-                    let processed_messages = processor(msg, &mut processor_state);
-
-                    for message in processed_messages {
-                        p2s_tx.send(message).map_err(|_| ActorError::P2SErr)?;
+            loop {
+                let mut found = false;
+                for rx in &mut priority_receivers {
+                    match rx.try_recv() {
+                        Ok(R2PMsg::Msg(msg)) => {
+                            let processed = processor(msg, &mut processor_state);
+                            for o in processed {
+                                p2s_tx.send(o).map_err(|_| ActorError::P2SErr)?;
+                            }
+                            found = true;
+                            break;
+                        }
+                        Ok(_) | Err(_) => continue,
                     }
-                } else {
-                    break;
+                }
+                if !found {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
                 }
             }
-            tracing::info!("[ACTOR][{}] Processor Ended", my_addr);
-            Ok(())
         });
+
     let tx_handle = tokio::spawn(tx(
         my_addr,
         before_send,
@@ -235,7 +333,8 @@ where
 
 async fn remote_parent_recv_subtask<M, C, D, AR, RX>(
     after_recv: AR,
-    row_q: mpsc::UnboundedSender<R2PMsg<M>>,
+    //row_q: mpsc::UnboundedSender<R2PMsg<M>>,
+    row_q: Vec<mpsc::UnboundedSender<R2PMsg<M>>>,
     cstate: Arc<Mutex<C>>,
     mut framed_reader: FramedRead<RX, D>,
 ) where
@@ -263,7 +362,9 @@ async fn remote_parent_recv_subtask<M, C, D, AR, RX>(
                     break;
                 }
             }
-            if row_q.send(R2PMsg::Msg(msg)).is_err() {
+            
+            let idx = msg.priority().to_index();
+            if row_q[idx].send(R2PMsg::Msg(msg)).is_err() {
                 break;
             }
         }
@@ -273,7 +374,8 @@ async fn remote_parent_recv_subtask<M, C, D, AR, RX>(
 
 async fn local_parent_recv_subtask<M, C, AR>(
     after_recv: AR,
-    row_q: mpsc::UnboundedSender<R2PMsg<M>>,
+    //row_q: mpsc::UnboundedSender<R2PMsg<M>>,
+    row_q: Vec<mpsc::UnboundedSender<R2PMsg<M>>>,
     cstate: Arc<Mutex<C>>,
     mut local_rx: LocalChannelRx,
 ) where
@@ -300,7 +402,9 @@ async fn local_parent_recv_subtask<M, C, AR>(
                     break;
                 }
             }
-            if row_q.send(R2PMsg::Msg(*msg)).is_err() {
+
+            let idx = msg.priority().to_index();
+            if row_q[idx].send(R2PMsg::Msg(*msg)).is_err() {
                 break;
             }
         }
@@ -348,7 +452,8 @@ async fn rx<M, CS, AR, D>(
     my_addr: ActorAddr,
     after_recv: AR,
     channel_state: CS,
-    p_tx: mpsc::UnboundedSender<R2PMsg<M>>,
+    //p_tx: mpsc::UnboundedSender<R2PMsg<M>>,
+    p_txs: Vec<mpsc::UnboundedSender<R2PMsg<M>>>,
     decoder: D,
     mut controller_rx: mpsc::UnboundedReceiver<ControlInst>,
 ) -> Result<(), ActorError>
@@ -372,7 +477,8 @@ where
                 let decoder_clone = decoder.clone();
                 let cstate_clone = channel_state.clone();
                 let after_recv_clone = after_recv.clone();
-                let p_tx_clone = p_tx.clone();
+                //let p_tx_clone = p_tx.clone();
+                let p_txs_clone = p_txs.clone();
                 let cancel_token = cancel_token.clone();
                 tcp_server_set.spawn(async move {
                     let socket = Socket::new(Domain::IPV4, Type::STREAM, None)
@@ -407,7 +513,8 @@ where
                                 let framed_reader = FramedRead::new(rx, decoder_clone.clone());
                                 remote_recv_set.spawn(remote_parent_recv_subtask(
                                     after_recv_clone.clone(),
-                                    p_tx_clone.clone(),
+                                    //p_tx_clone.clone(),
+                                    p_txs_clone.clone(),
                                     cstate_clone.clone(),
                                     framed_reader,
                                 ));
@@ -421,14 +528,18 @@ where
             ControlInst::StartLocalRecv(local_rx) => {
                 local_recv_set.spawn(local_parent_recv_subtask(
                     after_recv.clone(),
-                    p_tx.clone(),
+                    //p_tx.clone(),
+                    p_txs.clone(),
                     channel_state.clone(),
                     local_rx,
                 ));
             }
             ControlInst::Stop => {
                 cancel_token.cancel();
-                p_tx.send(R2PMsg::Exit).map_err(|_| ActorError::R2PErr)?;
+                //p_tx.send(R2PMsg::Exit).map_err(|_| ActorError::R2PErr)?;
+                for p_tx in &p_txs {
+                    p_tx.send(R2PMsg::Exit).map_err(|_| ActorError::R2PErr)?;
+                }
                 break;
             }
         }
