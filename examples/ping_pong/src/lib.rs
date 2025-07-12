@@ -1,15 +1,11 @@
-use lazy_static;
-use reactor_actor::ControlInst;
-use reactor_actor::ControlReq;
 pub use reactor_actor::setup_shared_logger_ref;
-use tokio::sync::mpsc;
 
 use bincode::{Decode, Encode};
 use reactor_actor::{
-    ActorAddr, ChannelAction, DecodeErr, Msg, RState, SState, State, common::sender_task,
+    ActorAddr, DecodeErr, Msg,
 };
 use std::collections::HashMap;
-use std::{sync::Arc, sync::Mutex, time::Duration};
+use std::time::Duration;
 use tokio_util::bytes::{Bytes, BytesMut};
 
 // //////////////////////////////////////////////////////////////////////////////
@@ -33,6 +29,7 @@ impl reactor_actor::ActorProcess for Processor {
 
     fn process(&mut self, input: Self::IMsg) -> Vec<Self::OMsg> {
         std::thread::sleep(Duration::from_secs(1));
+        println!("{:?}", input);
         match input {
             PingPongMsg::Ping => vec![PingPongMsg::Pong],
             PingPongMsg::Pong => vec![PingPongMsg::Ping],
@@ -49,7 +46,7 @@ struct Sender {
 impl reactor_actor::ActorSend for Sender {
     type OMsg = PingPongMsg;
 
-    async fn before_send(&mut self, output: &Self::OMsg) -> &Vec<ActorAddr> {
+    async fn before_send(&mut self, _output: &Self::OMsg) -> &Vec<ActorAddr> {
         &self.other_addr
     }
 }
@@ -140,7 +137,7 @@ lazy_static::lazy_static! {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn pingpong(
+pub fn pingpong(
     actor_name: &'static str,
     node_comm: reactor_actor::NodeComm,
     mut payload: HashMap<String, String>,

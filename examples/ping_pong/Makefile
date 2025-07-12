@@ -1,4 +1,4 @@
-install: install_node install_jobc
+install: install_node install_jobc build_ops
 	
 install_node:
 	cargo install --path ../../generic_nctrl/

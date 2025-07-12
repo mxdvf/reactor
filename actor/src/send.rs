@@ -12,7 +12,7 @@ use crate::{
 #[allow(clippy::type_complexity)]
 pub(crate) async fn tx2<M, E, BS>(
     my_addr: ActorAddr,
-    mut state: Option<BS>,
+    mut before_send: Option<BS>,
     mut p_rx: mpsc::UnboundedReceiver<M>,
     controller_tx: mpsc::Sender<ControlReq>,
     codec: E,
@@ -26,8 +26,8 @@ pub(crate) async fn tx2<M, E, BS>(
     let mut sub_senders = JoinSet::new();
     tracing::info!("[ACTOR][{}] Tx Started", my_addr);
     while let Some(m) = p_rx.recv().await {
-        let addrs = match state.as_mut() {
-            Some(state) => state.before_send(&m).await,
+        let addrs = match before_send.as_mut() {
+            Some(before_send) => before_send.before_send(&m).await,
             None => &vec![],
         };
         for addr in addrs {
@@ -69,7 +69,7 @@ async fn sender_task<M, E>(
         log::info!("[ACTOR] SubTx Ended");
     }
 
-    async fn local_sender<M: Send + 'static>(
+    async fn local_sender<M: std::fmt::Debug + Send + 'static + Clone>(
         tx: mpsc::Sender<Box<dyn Any + Send>>,
         mut rx: mpsc::UnboundedReceiver<M>,
     ) {

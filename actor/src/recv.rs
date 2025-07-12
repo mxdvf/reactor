@@ -195,6 +195,10 @@ async fn remote_parent_recv_subtask<M, AR, D, RX>(
                 if row_q.send(R2PMsg::Msg(msg)).is_err() {
                     break;
                 }
+            } else {
+                if row_q.send(R2PMsg::Msg(msg)).is_err() {
+                    break;
+                }
             }
         }
     }
@@ -203,7 +207,7 @@ async fn remote_parent_recv_subtask<M, AR, D, RX>(
 
 async fn local_parent_recv_subtask<M, AR>(
     row_q: mpsc::UnboundedSender<R2PMsg<M>>,
-    cstate: Option<Arc<Mutex<AR>>>,
+    after_recv: Option<Arc<Mutex<AR>>>,
     mut local_rx: LocalChannelRx,
 ) where
     M: Msg + 'static,
@@ -213,7 +217,7 @@ async fn local_parent_recv_subtask<M, AR>(
     loop {
         if let Some(msg) = local_rx.recv().await {
             let msg = msg.downcast::<M>().unwrap();
-            if let Some(cstate) = cstate.as_ref() {
+            if let Some(cstate) = after_recv.as_ref() {
                 let action = cstate.lock().await.after_recv(&msg).await;
                 match action {
                     ChannelAction::PASS => {}
@@ -228,7 +232,11 @@ async fn local_parent_recv_subtask<M, AR>(
                         break;
                     }
                 }
-                if row_q.send(R2PMsg::Msg(*msg)).is_err() {
+                if row_q.send(R2PMsg::Msg(*msg.clone())).is_err() {
+                    break;
+                }
+            } else {
+                if row_q.send(R2PMsg::Msg(*msg.clone())).is_err() {
                     break;
                 }
             }
