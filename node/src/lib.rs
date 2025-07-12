@@ -202,7 +202,6 @@ async fn handle_job_req(
                     },
                     payload,
                 );
-                //let port: u16 = 6000;
                 resp_tx.send(Some(SpawnResult { port })).unwrap();
                 control_tx
                     .send(ControlInst::StartTcpRecv(port))
