@@ -268,7 +268,7 @@ pub async fn webserver(job_control_tx: UnboundedSender<JobControllerReq>, port: 
     #[cfg(feature = "swagger")]
     let app = app.merge(SwaggerUi::new("/docs").url("/api-doc/openapi.json", ApiDoc::openapi()));
 
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}"))
         .await
         .unwrap();
     axum::serve(listener, app).await.unwrap();
