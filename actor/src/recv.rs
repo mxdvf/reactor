@@ -75,10 +75,7 @@ where
     let cancel_token = CancellationToken::new();
     let mut tcp_server_set: JoinSet<Result<(), ActorError>> = JoinSet::new();
     let mut local_recv_set = JoinSet::new();
-    let channel_state = match reciever {
-        Some(reciever) => Some(Arc::new(Mutex::new(reciever))),
-        None => None,
-    };
+    let channel_state = reciever.map(|reciever| Arc::new(Mutex::new(reciever)));
 
     while let Some(msg) = controller_rx.recv().await {
         match msg {
@@ -195,10 +192,8 @@ async fn remote_parent_recv_subtask<M, AR, D, RX>(
                 if row_q.send(R2PMsg::Msg(msg)).is_err() {
                     break;
                 }
-            } else {
-                if row_q.send(R2PMsg::Msg(msg)).is_err() {
-                    break;
-                }
+            } else if row_q.send(R2PMsg::Msg(msg)).is_err() {
+                break;
             }
         }
     }
@@ -235,10 +230,8 @@ async fn local_parent_recv_subtask<M, AR>(
                 if row_q.send(R2PMsg::Msg(*msg.clone())).is_err() {
                     break;
                 }
-            } else {
-                if row_q.send(R2PMsg::Msg(*msg.clone())).is_err() {
-                    break;
-                }
+            } else if row_q.send(R2PMsg::Msg(*msg.clone())).is_err() {
+                break;
             }
         }
     }

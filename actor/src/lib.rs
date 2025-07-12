@@ -79,29 +79,6 @@ enum R2PMsg<T> {
     Exit,
 }
 
-/// Instructions that are sent by the local controller to the actor
-// pub enum ControlInst {
-//     StartLocalRecv(LocalChannelRx),
-//     StartTcpRecv(u16),
-//     Stop,
-// }
-
-// /// Type of connection
-// #[derive(Debug)]
-// pub enum Connection {
-//     Remote(SocketAddr),
-//     Local(LocalChannelTx),
-// }
-
-/// Requests that can be sent to the local controller by the actor or some external
-/// API
-// pub enum ControlReq {
-//     Resolve {
-//         addr: ActorAddr,
-//         resp_tx: oneshot::Sender<Connection>,
-//     },
-// }
-
 pub trait ActorRecv: Send + 'static {
     type IMsg: Msg;
     fn after_recv(
