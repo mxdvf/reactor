@@ -83,6 +83,7 @@ pub trait ActorRecv: Send + 'static {
     type IMsg: Msg;
     fn after_recv(
         &mut self,
+        worker_id: ActorAddr,
         input: &Self::IMsg,
     ) -> impl std::future::Future<Output = ChannelAction> + Send;
 }
@@ -92,7 +93,7 @@ pub struct NoOpActorRecv<M> {
 }
 impl<M: Msg> ActorRecv for NoOpActorRecv<M> {
     type IMsg = M;
-    async fn after_recv(&mut self, _input: &Self::IMsg) -> ChannelAction {
+    async fn after_recv(&mut self, _addr: ActorAddr, _input: &Self::IMsg) -> ChannelAction {
         panic!("This Shouldn't be used")
     }
 }

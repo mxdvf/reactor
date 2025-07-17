@@ -1,7 +1,12 @@
 use std::{any::Any, collections::HashMap, time::Duration};
 
 use futures::SinkExt as _;
-use tokio::{io::AsyncWrite, net::TcpStream, sync::mpsc, task::JoinSet};
+use tokio::{
+    io::{AsyncWrite, AsyncWriteExt},
+    net::TcpStream,
+    sync::mpsc,
+    task::JoinSet,
+};
 use tokio_util::codec::{Encoder, FramedWrite};
 
 use crate::{
@@ -33,7 +38,13 @@ pub(crate) async fn tx2<M, E, BS>(
         for addr in addrs {
             let sender = addr_to_buff.entry(addr).or_insert_with(|| {
                 let (tx, rx) = mpsc::unbounded_channel::<M>();
-                sub_senders.spawn(sender_task(addr, rx, codec.clone(), controller_tx.clone()));
+                sub_senders.spawn(sender_task(
+                    my_addr,
+                    addr,
+                    rx,
+                    codec.clone(),
+                    controller_tx.clone(),
+                ));
                 tx
             });
             let _ = sender.send(m.clone());
@@ -44,6 +55,7 @@ pub(crate) async fn tx2<M, E, BS>(
 }
 
 async fn sender_task<M, E>(
+    my_addr: ActorAddr,
     send_addr: ActorAddr,
     rx: mpsc::UnboundedReceiver<M>,
     encoder: E,
@@ -53,11 +65,13 @@ async fn sender_task<M, E>(
     E: Encoder<M> + 'static + Send,
 {
     async fn remote_sender<C: Encoder<M> + 'static + Send, M>(
-        tx: impl AsyncWrite + Unpin,
+        my_addr: ActorAddr,
+        mut tx: impl AsyncWrite + Unpin,
         mut rx: mpsc::UnboundedReceiver<M>,
         encoder: C,
     ) {
         log::info!("[ACTOR] SubTx Started");
+        send_handshake(&mut tx, my_addr).await;
         let mut framed_writer = FramedWrite::new(tx, encoder);
         loop {
             if let Some(msg) = rx.recv().await {
@@ -70,10 +84,12 @@ async fn sender_task<M, E>(
     }
 
     async fn local_sender<M: std::fmt::Debug + Send + 'static + Clone>(
+        my_addr: ActorAddr,
         tx: mpsc::Sender<Box<dyn Any + Send>>,
         mut rx: mpsc::UnboundedReceiver<M>,
     ) {
         log::info!("[ACTOR] SubTx Started (Local)");
+        tx.send(Box::new(my_addr.to_string())).await.unwrap();
         loop {
             if let Some(msg) = rx.recv().await {
                 if tx.send(Box::new(msg)).await.is_err() {
@@ -98,7 +114,7 @@ async fn sender_task<M, E>(
             match TcpStream::connect(socket_addr).await {
                 Ok(s) => {
                     let (_, tx) = s.into_split();
-                    break remote_sender(tx, rx, encoder).await;
+                    break remote_sender(my_addr, tx, rx, encoder).await;
                 }
                 Err(_) => {
                     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -107,7 +123,18 @@ async fn sender_task<M, E>(
             }
         },
         Connection::Local(write_half) => {
-            local_sender(write_half, rx).await;
+            local_sender(my_addr, write_half, rx).await;
         }
     };
+}
+
+pub async fn send_handshake(tx: &mut (impl AsyncWrite + Unpin), handshake: &str) {
+    let bytes = handshake.as_bytes();
+    let len = bytes.len();
+
+    // Step 1: Write the length as a 4-byte big-endian integer
+    tx.write_u32(len as u32).await.unwrap();
+
+    // Step 2: Write the UTF-8 bytes
+    tx.write_all(bytes).await.unwrap();
 }

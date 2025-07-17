@@ -6,8 +6,8 @@ use std::{
 use futures::StreamExt as _;
 use socket2::{Domain, Socket, Type};
 use tokio::{
-    io::AsyncRead,
-    net::TcpListener,
+    io::{AsyncRead, AsyncReadExt as _},
+    net::{TcpListener, tcp::OwnedReadHalf},
     sync::{Mutex, mpsc},
     task::JoinSet,
 };
@@ -88,8 +88,11 @@ where
                     channel_state.clone(),
                 ));
             }
-            ControlInst::StartLocalRecv(local_rx) => {
+            ControlInst::StartLocalRecv(mut local_rx) => {
+                let addr = local_rx.recv().await.unwrap();
+                let addr = *(addr.downcast::<String>().unwrap());
                 local_recv_set.spawn(local_parent_recv_subtask(
+                    addr,
                     p_tx.clone(),
                     channel_state.clone(),
                     local_rx,
@@ -148,9 +151,14 @@ where
                 let (socket, _) = accept_result.map_err(|e| {
                     ActorError::RecieverErr(RecieverErr::TcpStartErr(e))
                 })?;
-                let (rx, _) = socket.into_split();
+                let (mut rx, _) = socket.into_split();
+                // Whenever an actor connects it first needs to tell us its
+                // address.
+                let remote_addr = recv_remote_handshake(&mut rx).await;
                 let framed_reader = FramedRead::new(rx, decoder.clone());
+
                 remote_recv_set.spawn(remote_parent_recv_subtask(
+                    remote_addr,
                     p_tx.clone(),
                     cstate.clone(),
                     framed_reader,
@@ -162,7 +170,24 @@ where
     Ok(())
 }
 
+async fn recv_remote_handshake(rx: &mut OwnedReadHalf) -> String {
+    // Step 1: Read 4 bytes as the length prefix
+    let size = rx.read_u32().await.unwrap();
+
+    // Step 2: Allocate a buffer of that size
+    let mut buf = vec![0u8; size as usize];
+
+    // Step 3: Read exactly that many bytes into the buffer
+    rx.read_exact(&mut buf).await.unwrap();
+
+    // Step 4: Convert to String
+    let parent_addr = String::from_utf8(buf).unwrap();
+
+    parent_addr
+}
+
 async fn remote_parent_recv_subtask<M, AR, D, RX>(
+    parent_addr: String,
     row_q: mpsc::UnboundedSender<R2PMsg<M>>,
     cstate: Option<Arc<Mutex<AR>>>,
     mut framed_reader: FramedRead<RX, D>,
@@ -172,10 +197,11 @@ async fn remote_parent_recv_subtask<M, AR, D, RX>(
     RX: AsyncRead + Unpin,
 {
     tracing::info!("[ACTOR] SubRx Started");
+    let parent_addr = parent_addr.leak();
     loop {
         if let Some(Ok(msg)) = framed_reader.next().await {
             if let Some(cstate) = cstate.as_ref() {
-                let action = cstate.lock().await.after_recv(&msg).await;
+                let action = cstate.lock().await.after_recv(parent_addr, &msg).await;
                 match action {
                     ChannelAction::PASS => {}
                     ChannelAction::PANIC => {
@@ -201,6 +227,7 @@ async fn remote_parent_recv_subtask<M, AR, D, RX>(
 }
 
 async fn local_parent_recv_subtask<M, AR>(
+    parent_addr: String,
     row_q: mpsc::UnboundedSender<R2PMsg<M>>,
     after_recv: Option<Arc<Mutex<AR>>>,
     mut local_rx: LocalChannelRx,
@@ -209,11 +236,12 @@ async fn local_parent_recv_subtask<M, AR>(
     AR: ActorRecv<IMsg = M>,
 {
     tracing::info!("[ACTOR] SubRx Started");
+    let parent_addr = parent_addr.leak();
     loop {
         if let Some(msg) = local_rx.recv().await {
             let msg = msg.downcast::<M>().unwrap();
             if let Some(cstate) = after_recv.as_ref() {
-                let action = cstate.lock().await.after_recv(&msg).await;
+                let action = cstate.lock().await.after_recv(parent_addr, &msg).await;
                 match action {
                     ChannelAction::PASS => {}
                     ChannelAction::PANIC => {
