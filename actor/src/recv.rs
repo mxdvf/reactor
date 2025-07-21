@@ -17,7 +17,7 @@ use tokio_util::{
 };
 
 use crate::{
-    ActorAddr, ActorRecv, ChannelAction, DecodeErr, Msg, R2PMsg,
+    ActorAddrRef, ActorRecv, ChannelAction, DecodeErr, Msg, R2PMsg,
     err::{ActorError, RecieverErr},
     node_comm::{ControlInst, LocalChannelRx},
 };
@@ -60,7 +60,7 @@ use crate::{
 ///   decode them, and forward them for processing based on channel state.
 ///
 pub(crate) async fn rx2<M, AR, D>(
-    my_addr: ActorAddr,
+    my_addr: ActorAddrRef,
     reciever: Option<AR>,
     p_tx: mpsc::UnboundedSender<R2PMsg<M>>,
     decoder: D,

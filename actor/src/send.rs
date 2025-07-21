@@ -10,13 +10,13 @@ use tokio::{
 use tokio_util::codec::{Encoder, FramedWrite};
 
 use crate::{
-    ActorAddr, ActorSend, Msg, SendBuffer,
+    ActorAddrRef, ActorSend, Msg, SendBuffer,
     node_comm::{Connection, ControlReq},
 };
 
 #[allow(clippy::type_complexity)]
 pub(crate) async fn tx2<M, E, BS>(
-    my_addr: ActorAddr,
+    my_addr: ActorAddrRef,
     mut before_send: Option<BS>,
     mut p_rx: mpsc::UnboundedReceiver<M>,
     controller_tx: mpsc::Sender<ControlReq>,
@@ -26,7 +26,7 @@ pub(crate) async fn tx2<M, E, BS>(
     BS: ActorSend<OMsg = M>,
     E: Encoder<M> + 'static + Send + Clone,
 {
-    let mut addr_to_buff: HashMap<ActorAddr, SendBuffer<M>> = HashMap::new();
+    let mut addr_to_buff: HashMap<ActorAddrRef, SendBuffer<M>> = HashMap::new();
 
     let mut sub_senders = JoinSet::new();
     tracing::info!("[ACTOR][{}] Tx Started", my_addr);
@@ -55,8 +55,8 @@ pub(crate) async fn tx2<M, E, BS>(
 }
 
 async fn sender_task<M, E>(
-    my_addr: ActorAddr,
-    send_addr: ActorAddr,
+    my_addr: ActorAddrRef,
+    send_addr: ActorAddrRef,
     rx: mpsc::UnboundedReceiver<M>,
     encoder: E,
     controller_tx: mpsc::Sender<ControlReq>,
@@ -65,7 +65,7 @@ async fn sender_task<M, E>(
     E: Encoder<M> + 'static + Send,
 {
     async fn remote_sender<C: Encoder<M> + 'static + Send, M>(
-        my_addr: ActorAddr,
+        my_addr: ActorAddrRef,
         mut tx: impl AsyncWrite + Unpin,
         mut rx: mpsc::UnboundedReceiver<M>,
         encoder: C,
@@ -84,7 +84,7 @@ async fn sender_task<M, E>(
     }
 
     async fn local_sender<M: std::fmt::Debug + Send + 'static + Clone>(
-        my_addr: ActorAddr,
+        my_addr: ActorAddrRef,
         tx: mpsc::Sender<Box<dyn Any + Send>>,
         mut rx: mpsc::UnboundedReceiver<M>,
     ) {

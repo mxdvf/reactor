@@ -31,7 +31,8 @@ pub trait SState: Default + Send {}
 pub trait Msg: Send + Sync + std::fmt::Debug + 'static + Clone {}
 
 /// Addr of the actors
-pub type ActorAddr = &'static str;
+pub type ActorAddrRef = &'static str;
+pub type ActorAddr = String;
 
 #[derive(Encode, Decode, Debug, Clone)]
 pub struct EmptyMsg;
@@ -83,7 +84,7 @@ pub trait ActorRecv: Send + 'static {
     type IMsg: Msg;
     fn after_recv(
         &mut self,
-        worker_id: ActorAddr,
+        worker_id: ActorAddrRef,
         input: &Self::IMsg,
     ) -> impl std::future::Future<Output = ChannelAction> + Send;
 }
@@ -93,7 +94,7 @@ pub struct NoOpActorRecv<M> {
 }
 impl<M: Msg> ActorRecv for NoOpActorRecv<M> {
     type IMsg = M;
-    async fn after_recv(&mut self, _addr: ActorAddr, _input: &Self::IMsg) -> ChannelAction {
+    async fn after_recv(&mut self, _addr: ActorAddrRef, _input: &Self::IMsg) -> ChannelAction {
         panic!("This Shouldn't be used")
     }
 }
@@ -105,12 +106,20 @@ pub trait ActorProcess: Send + 'static {
     fn process(&mut self, input: Self::IMsg) -> Vec<Self::OMsg>;
 }
 
+// pub trait ActorSend: Send + 'static {
+//     type OMsg: Msg;
+//     fn before_send<'a>(
+//         &'a mut self,
+//         output: &Self::OMsg,
+//     ) -> impl std::future::Future<Output = &'a Vec<ActorAddrRef>> + Send;
+// }
+
 pub trait ActorSend: Send + 'static {
     type OMsg: Msg;
-    fn before_send(
-        &mut self,
+    fn before_send<'a>(
+        &'a mut self,
         output: &Self::OMsg,
-    ) -> impl std::future::Future<Output = &Vec<ActorAddr>> + Send;
+    ) -> impl std::future::Future<Output = &Vec<ActorAddrRef>> + Send;
 }
 pub struct NoOpActorSend<M> {
     m: PhantomData<M>,
@@ -118,7 +127,7 @@ pub struct NoOpActorSend<M> {
 impl<M: Msg> ActorSend for NoOpActorSend<M> {
     type OMsg = M;
 
-    async fn before_send(&mut self, _output: &Self::OMsg) -> &Vec<ActorAddr> {
+    async fn before_send(&mut self, _output: &Self::OMsg) -> &Vec<ActorAddrRef> {
         panic!("This Shouldn't be used")
     }
 }
@@ -206,7 +215,7 @@ impl<R, P, S, M> Behaviour<R, P, S, M> {
 }
 
 pub async fn actor<I, O, R, P, S, CD>(
-    addr: ActorAddr,
+    addr: ActorAddrRef,
     mut behaviour: Behaviour<R, P, S, I>,
     codec: CD,
     node_comm: NodeComm,
