@@ -2,7 +2,7 @@ pub use reactor_actor::setup_shared_logger_ref;
 
 use bincode::{Decode, Encode};
 use reactor_actor::{
-    ActorAddr, DecodeErr, Msg,
+    ActorAddrRef, DecodeErr, Msg,
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -41,12 +41,12 @@ impl reactor_actor::ActorProcess for Processor {
 //                                  Sender
 // //////////////////////////////////////////////////////////////////////////////
 struct Sender {
-    other_addr: Vec<ActorAddr>,
+    other_addr: Vec<ActorAddrRef>,
 }
 impl reactor_actor::ActorSend for Sender {
     type OMsg = PingPongMsg;
 
-    async fn before_send(&mut self, _output: &Self::OMsg) -> &Vec<ActorAddr> {
+    async fn before_send(&mut self, _output: &Self::OMsg) -> &Vec<ActorAddrRef> {
         &self.other_addr
     }
 }
@@ -116,7 +116,7 @@ impl tokio_util::codec::Encoder<PingPongMsg> for PingPongCodec {
 //                                ACTORS
 // //////////////////////////////////////////////////////////////////////////////
 
-pub async fn actor(node_comm: reactor_actor::NodeComm, my_addr: ActorAddr, other_addr: ActorAddr) {
+pub async fn actor(node_comm: reactor_actor::NodeComm, my_addr: ActorAddrRef, other_addr: ActorAddrRef) {
     let mut behaviour = reactor_actor::Behaviour::with_send(
         Processor {},
         Sender {
@@ -127,7 +127,7 @@ pub async fn actor(node_comm: reactor_actor::NodeComm, my_addr: ActorAddr, other
         behaviour.add_generator(Box::new(vec![PingPongMsg::Ping].into_iter()));
     }
 
-    reactor_actor::actor(my_addr, behaviour, PingPongCodec::new(), node_comm)
+    reactor_actor::actor(&my_addr, behaviour, PingPongCodec::new(), node_comm)
         .await
         .unwrap();
 }
