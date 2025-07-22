@@ -117,7 +117,7 @@ pub trait ActorProcess: Send + 'static {
 pub trait ActorSend: Send + 'static {
     type OMsg: Msg;
     fn before_send<'a>(
-        &'a mut self,
+        &mut self,
         output: &Self::OMsg,
     ) -> impl std::future::Future<Output = &Vec<ActorAddrRef>> + Send;
 }
