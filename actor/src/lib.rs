@@ -117,9 +117,9 @@ pub trait ActorProcess: Send + 'static {
 pub trait ActorSend: Send + 'static {
     type OMsg: Msg;
     fn before_send<'a>(
-        &mut self,
+        &'a mut self,
         output: &Self::OMsg,
-    ) -> impl std::future::Future<Output = &Vec<ActorAddrRef>> + Send;
+    ) -> impl std::future::Future<Output = &'a Vec<ActorAddrRef>> + Send;
 }
 pub struct NoOpActorSend<M> {
     m: PhantomData<M>,
