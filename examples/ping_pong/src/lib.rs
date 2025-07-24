@@ -29,7 +29,7 @@ impl reactor_actor::ActorProcess for Processor {
 
     fn process(&mut self, input: Self::IMsg) -> Vec<Self::OMsg> {
         std::thread::sleep(Duration::from_secs(1));
-        println!("{:?}", input);
+        println!("{input:?}");
         match input {
             PingPongMsg::Ping => vec![PingPongMsg::Pong],
             PingPongMsg::Pong => vec![PingPongMsg::Ping],
@@ -127,7 +127,7 @@ pub async fn actor(node_comm: reactor_actor::NodeComm, my_addr: ActorAddrRef, ot
         behaviour.add_generator(Box::new(vec![PingPongMsg::Ping].into_iter()));
     }
 
-    reactor_actor::actor(&my_addr, behaviour, PingPongCodec::new(), node_comm)
+    reactor_actor::actor(my_addr, behaviour, PingPongCodec::new(), node_comm)
         .await
         .unwrap();
 }

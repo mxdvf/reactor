@@ -181,9 +181,7 @@ async fn recv_remote_handshake(rx: &mut OwnedReadHalf) -> String {
     rx.read_exact(&mut buf).await.unwrap();
 
     // Step 4: Convert to String
-    let parent_addr = String::from_utf8(buf).unwrap();
-
-    parent_addr
+    String::from_utf8(buf).unwrap()
 }
 
 async fn remote_parent_recv_subtask<M, AR, D, RX>(
