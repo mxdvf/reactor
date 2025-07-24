@@ -69,7 +69,7 @@ impl LibBuilder {
             #[cfg(target_os = "linux")]
             let name = format!("lib{}.so", library_name);
             #[cfg(target_os = "macos")]
-            let name = format!("lib{}.dylib", library_name);
+            let name = format!("lib{library_name}.dylib");
             #[cfg(target_os = "windows")]
             let name = format!("lib{}.dll", library_name);
 
