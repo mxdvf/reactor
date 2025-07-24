@@ -111,7 +111,7 @@ impl<PM: PlacementManager> JobController<PM> {
     pub async fn start_job(&mut self, ops: Vec<LogicalOp>) {
         for op in ops {
             for physical_op in self.pm.place(&op) {
-                log::info!("Starting Physical op: {:?}", physical_op);
+                log::info!("Starting Physical op: {physical_op:?}");
                 let remote_actor_info = self
                     .nodes
                     .get_mut(&physical_op.nodename)
@@ -150,7 +150,7 @@ impl<PM: PlacementManager> JobController<PM> {
         port: u16,
     ) -> reactor_client::apis::configuration::Configuration {
         reactor_client::apis::configuration::Configuration {
-            base_path: format!("http://{}:{}", hostname, port),
+            base_path: format!("http://{hostname}:{port}"),
             ..Default::default()
         }
     }

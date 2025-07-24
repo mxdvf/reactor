@@ -13,7 +13,10 @@ use tokio::{
 };
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 
-use crate::{ActorAddr, Connection, ControlReq, Msg};
+use crate::{
+    ActorAddrRef, Msg,
+    node_comm::{Connection, ControlReq},
+};
 
 use super::{ChannelAction, RState, SState, State};
 
@@ -53,7 +56,7 @@ where
 }
 
 pub fn sender_task<M, C>(
-    addr: ActorAddr,
+    addr: ActorAddrRef,
     rx: mpsc::UnboundedReceiver<M>,
     encoder: C,
     controller_tx: mpsc::Sender<ControlReq>,
@@ -123,7 +126,7 @@ where
 }
 
 fn _blackhole_sender<M, C>(
-    _addr: ActorAddr,
+    _addr: ActorAddrRef,
     mut rx: mpsc::UnboundedReceiver<M>,
     _encoder: C,
     _controller_tx: mpsc::Sender<ControlReq>,

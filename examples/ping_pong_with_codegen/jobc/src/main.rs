@@ -18,34 +18,26 @@ use std::time::Duration;
 async fn main() {
     let ops = vec![
         LogicalOp {
-            name: "pinger".to_string(),
-            lib_name: "ping_pong_actor".to_string(),
-        },
-        LogicalOp {
-            name: "ponger".to_string(),
+            name: "pingpong".to_string(),
             lib_name: "ping_pong_actor".to_string(),
         },
     ];
     let pm = ManualPlacementManager {
         map: HashMap::from([
             (
-                "pinger".to_string(),
+                "pingpong".to_string(),
                 vec![PhysicalOp {
-                    logical: (ops[0]).clone(),
                     nodename: "node1".to_string(),
                     actor_name: "pinger".to_string(),
-                    idx: 0,
-                    peers: 1,
+                    payload: HashMap::from([("other".to_string(), "pinger".to_string())])
                 }],
             ),
             (
-                "ponger".to_string(),
+                "pingpong".to_string(),
                 vec![PhysicalOp {
-                    logical: (ops[1]).clone(),
                     nodename: "node1".to_string(),
                     actor_name: "ponger".to_string(),
-                    idx: 0,
-                    peers: 1,
+                    payload: HashMap::from([("other".to_string(), "pinger".to_string())])
                 }],
             ),
         ]),
