@@ -5,7 +5,7 @@ use std::{
     pin::Pin,
     sync::{Arc, Mutex},
 };
-
+use std::sync::mpmc::SendError;
 use err::{ActorError, RecieverErr};
 use futures::{StreamExt, future::join_all};
 // use reactor_node::{ControlInst, ControlReq};
@@ -36,28 +36,28 @@ pub trait RState: Default + Send {}
 /// State of the Sender
 pub trait SState: Default + Send {}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Priority {
-    High,
-    Medium,
-    Low,
-}
-
-impl Priority {
-    pub fn to_index(self) -> usize {
-        match self {
-            Priority::High => 0,
-            Priority::Medium => 1,
-            Priority::Low => 2,
-        }
-    }
-}
-
-impl Default for Priority {
-    fn default() -> Self {
-        Priority::Low
-    }
-}
+// #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+// pub enum Priority {
+//     High,
+//     Medium,
+//     Low,
+// }
+//
+// impl Priority {
+//     pub fn to_index(self) -> usize {
+//         match self {
+//             Priority::High => 0,
+//             Priority::Medium => 1,
+//             Priority::Low => 2,
+//         }
+//     }
+// }
+//
+// impl Default for Priority {
+//     fn default() -> Self {
+//         Priority::Low
+//     }
+// }
 
 /*#[derive(Debug)]
 pub struct MyMessage {
@@ -66,12 +66,14 @@ pub struct MyMessage {
 
 /// Messages that can flow between the actors.
 //pub trait Msg: Send + std::fmt::Debug {}
-pub trait Msg: Send + std::fmt::Debug {
+pub trait HasPriority {
     //fn priority(&self) -> Priority;
-    fn priority(&self) -> Priority {
-        Priority::default()
+    fn priority(&self) -> u8 {
+        0   // 0 is highest priority
     }
 }
+
+pub trait Msg: Send + std::fmt::Debug + HasPriority {}
 
 /*enum R2PMsg<T> {
     Msg { value: T, priority: Priority },
@@ -133,6 +135,15 @@ enum R2PMsg<T> {
     Exit,
 }
 
+impl<T> HasPriority for R2PMsg<T> {
+    fn priority(&self) -> u8 {
+        match self {
+            R2PMsg::Msg(t) => t.priority(),
+            R2PMsg::Exit => 0,  // How to make it highest priority?!
+        }
+    }
+}
+
 impl<T: Clone> Clone for R2PMsg<T> {
     fn clone(&self) -> Self {
         match self {
@@ -165,7 +176,7 @@ pub enum ControlReq {
     },
 }
 
-//#[derive(Clone)]
+#[derive(Clone)]
 pub struct PriorityChannelTx<T> {
     //senders: Vec<mpsc::UnboundedSender<R2PMsg<T>>>,
     senders: Vec<mpsc::UnboundedSender<T>>,
@@ -176,32 +187,29 @@ pub struct PriorityChannelRx<T> {
     receivers: Vec<mpsc::UnboundedReceiver<T>>,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum PriorityChannelStatus<T> {
-    Message(T),
-    Disconnected, // All channels closed
-    Empty,        // No message yet, some still open
-}
+// #[derive(Debug, PartialEq)]
+// pub enum PriorityChannelError {
+//     Disconnected, // All channels closed
+//     Empty,        // No message yet, some still open
+// }
 
-impl<T> Clone for PriorityChannelTx<T> {
-    fn clone(&self) -> Self {
-        Self {
-            senders: self.senders.clone(),
-        }
-    }
-}
+// impl<T> Clone for PriorityChannelTx<T> {
+//     fn clone(&self) -> Self {
+//         Self {
+//             senders: self.senders.clone(),
+//         }
+//     }
+// }
 
-impl<T> PriorityChannelTx<T> {
+impl<T: HasPriority> PriorityChannelTx<T> {
     //pub fn put_row(&self, prio: Priority, msg: R2PMsg<T>) {
-    pub fn put_row(&self, prio: Priority, msg: T) {
-        let idx = prio.to_index();
+    pub fn send(&self, msg: T) -> Result<(), SendError<T>> {
+        let idx = msg.priority();
         if let Some(tx) = self.senders.get(idx) {
-            let _ = tx.send(msg);
+            (*tx).send(msg)
+        } else {
+            SendError(msg)
         }
-    }
-
-    pub fn len(&self) -> usize {
-        self.senders.len()
     }
 }
 
@@ -216,38 +224,34 @@ impl<T> PriorityChannelTx<T> {
     }
 }*/
 
-impl<T> PriorityChannelTx<R2PMsg<T>> {
-    pub fn broadcast_exit(&self) {
-        for tx in &self.senders {
-            let _ = tx.send(R2PMsg::Exit);
-        }
-    }
-}
+// impl<T> PriorityChannelTx<R2PMsg<T>> {
+//     pub fn broadcast_exit(&self) {
+//         for tx in &self.senders {
+//             let _ = tx.send(R2PMsg::Exit);
+//         }
+//     }
+// }
 
 impl<T> PriorityChannelRx<T> {
     //pub fn get_row(&mut self) -> Option<T> {
-    pub fn get_row(&mut self) -> PriorityChannelStatus<T> {
+    pub fn try_recv(&mut self) -> Result<T, TryRecvError> {
         let mut disconnected_count = 0;
 
-        for prio in &[Priority::High, Priority::Medium, Priority::Low] {
-            let idx = prio.to_index();
-
-            if let Some(rx) = self.receivers.get_mut(idx) {
-                match rx.try_recv() {
-                    Ok(msg) => return PriorityChannelStatus::Message(msg),
-                    Err(TryRecvError::Empty) => continue, // Keep checking other priorities
-                    Err(TryRecvError::Disconnected) => disconnected_count += 1,
-                }
+        for rx in &mut self.receivers {
+            match rx.try_recv() {
+                Ok(msg) => return Ok(msg),
+                Err(TryRecvError::Empty) => continue, // Keep checking other priorities
+                Err(TryRecvError::Disconnected) => disconnected_count += 1,
             }
         }
 
         // If all channels are disconnected, return None
         if disconnected_count == self.receivers.len() {
-            PriorityChannelStatus::Disconnected
+            Err(TryRecvError::Disconnected)
         } else {
             // No message found, but at least one channel still open → wait and try again later
             // Leave it to caller to sleep or retry
-            PriorityChannelStatus::Empty
+            Err(TryRecvError::Empty)
         }
     }
 }
@@ -293,20 +297,17 @@ impl<T> PriorityChannelRx<T> {
     }
 }*/
 
-pub fn priority_channel<T>() -> (PriorityChannelTx<T>, PriorityChannelRx<T>) {
+pub fn priority_channel<T>(num_prios: u8) -> (PriorityChannelTx<T>, PriorityChannelRx<T>) {
     let mut senders = Vec::new();
     let mut receivers = Vec::new();
 
-    for _ in &[Priority::High, Priority::Medium, Priority::Low] {
+    for _ in 0..num_prios {
         let (tx, rx) = mpsc::unbounded_channel::<T>();
         senders.push(tx);
         receivers.push(rx);
     }
 
-    (
-        PriorityChannelTx { senders },
-        PriorityChannelRx { receivers },
-    )
+    (PriorityChannelTx { senders }, PriorityChannelRx { receivers })
 }
 
 /// Asynchronously drives the message processing pipeline from input to output distribution.
@@ -512,25 +513,20 @@ where
                     None => {
                         std::thread::sleep(std::time::Duration::from_millis(5));
                     }*/
-                    PriorityChannelStatus::Message(R2PMsg::Msg(m)) => {
+                    Ok(R2PMsg::Msg(m)) => {
                         let processed = processor(m, &mut processor_state);
                         for o in processed {
                             p2s_tx.send(o).map_err(|_| ActorError::P2SErr)?;
                         }
                     }
-                    PriorityChannelStatus::Message(R2PMsg::Exit) => {
-                        exit_count += 1;
-                        //println!("Received Exit message: {exit_count}/{expected_exit_count}");
-
-                        if exit_count >= p_tx.len() {
-                            println!("All producers exited. Processor stopping.");
-                            break;
-                        }
+                    Ok(R2PMsg::Exit) => {
+                        println!("Received Exit message: {exit_count}/{expected_exit_count}");
+                        break;
                     }
-                    PriorityChannelStatus::Empty => {
+                    Err(TryRecvError::Empty) => {
                         std::thread::sleep(std::time::Duration::from_millis(5));
                     }
-                    PriorityChannelStatus::Disconnected => {
+                    Err(TryRecvError::Disconnected) => {
                         // Optional: may break early or continue waiting for Exit
                         println!("All channels disconnected, but exit count = {exit_count}");
                         break;
@@ -593,7 +589,7 @@ async fn remote_parent_recv_subtask<M, C, D, AR, RX>(
             if row_q[idx].send(R2PMsg::Msg(msg)).is_err() {
                 break;
             }*/
-            pc_tx.put_row(msg.priority(), R2PMsg::Msg(msg));
+            pc_tx.send(R2PMsg::Msg(msg));
         }
     }
     tracing::info!("[ACTOR] SubRx Ended");
@@ -637,7 +633,7 @@ async fn local_parent_recv_subtask<M, C, AR>(
             /*if row_q[idx].send(R2PMsg::Msg(*msg)).is_err() {
                 break;
             }*/
-            pc_tx.put_row(msg.priority(), R2PMsg::Msg(*msg));
+            pc_tx.send(R2PMsg::Msg(*msg));
         }
     }
     tracing::info!("[ACTOR] SubRx Ended");
@@ -769,7 +765,7 @@ where
             ControlInst::Stop => {
                 cancel_token.cancel();
                 //p_tx.send(R2PMsg::Exit).map_err(|_| ActorError::R2PErr)?;
-                pc_tx.broadcast_exit();
+                pc_tx.send(R2PMsg::Exit);
                 /*for p_tx in &p_txs {
                     p_tx.send(R2PMsg::Exit).map_err(|_| ActorError::R2PErr)?;
                 }*/
@@ -851,8 +847,7 @@ where
 {
     for m in generator {
         //p_tx.send(R2PMsg::Msg(m)).map_err(|_| ActorError::R2PErr)?;
-        let prio = m.priority();
-        p_tx.put_row(prio, R2PMsg::Msg(m));
+        p_tx.send(R2PMsg::Msg(m)).unwrap();
     }
     Ok(())
 }
@@ -861,41 +856,53 @@ where
 mod tests {
     use super::*;
     use std::collections::VecDeque;
+    use std::hash::Hash;
     use tokio::sync::mpsc;
 
     // Dummy message type
     #[derive(Debug, Clone, PartialEq)]
-    struct TestMsg(&'static str);
+    enum TestMsg {
+        Low,
+        Medium,
+        High
+    }
+
+    impl HasPriority for TestMsg {
+        fn priority(&self) -> u8 {
+            match self {
+                TestMsg::Low => 2,
+                TestMsg::Medium => 1,
+                TestMsg::High => 0,
+            }
+        }
+    }
 
     #[test]
     fn test_priority_order() {
-        let (tx, mut rx) = priority_channel::<R2PMsg<TestMsg>>();
+        let (tx, mut rx) = priority_channel::<R2PMsg<TestMsg>>(3);
 
-        tx.senders[Priority::Low.to_index()]
-            .send(R2PMsg::Msg(TestMsg("low")))
+        tx.send(R2PMsg::Msg(TestMsg::Low))
             .unwrap();
 
-        tx.senders[Priority::Medium.to_index()]
-            .send(R2PMsg::Msg(TestMsg("medium")))
+        tx.send(R2PMsg::Msg(TestMsg::Medium))
             .unwrap();
 
-        tx.senders[Priority::High.to_index()]
-            .send(R2PMsg::Msg(TestMsg("high")))
+        tx.send(R2PMsg::Msg(TestMsg::High))
             .unwrap();
 
         assert_eq!(
-            rx.get_row(),
-            PriorityChannelStatus::Message(R2PMsg::Msg(TestMsg("high")))
+            rx.try_recv(),
+            Ok(R2PMsg::Msg(TestMsg::High))
         );
         assert_eq!(
-            rx.get_row(),
-            PriorityChannelStatus::Message(R2PMsg::Msg(TestMsg("medium")))
+            rx.try_recv(),
+            Ok(R2PMsg::Msg(TestMsg::Medium))
         );
         assert_eq!(
-            rx.get_row(),
-            PriorityChannelStatus::Message(R2PMsg::Msg(TestMsg("low")))
+            rx.try_recv(),
+            Ok(R2PMsg::Msg(TestMsg::Low))
         );
-        assert_eq!(rx.get_row(), PriorityChannelStatus::Empty);
+        assert_eq!(rx.try_recv(), Err(TryRecvError::Empty));
     }
 
     #[test]
@@ -903,21 +910,21 @@ mod tests {
         let (tx, mut rx) = priority_channel::<R2PMsg<TestMsg>>();
         drop(tx.senders); // Drop all senders to simulate disconnect
 
-        assert_eq!(rx.get_row(), PriorityChannelStatus::Disconnected);
+        assert_eq!(rx.try_recv(), Err(TryRecvError::Disconnected));
     }
 
     #[test]
     fn test_exit_message() {
         let (tx, mut rx) = priority_channel::<R2PMsg<TestMsg>>();
-        tx.senders[0].send(R2PMsg::Exit).unwrap(); // Send Exit on High priority
+        tx.send(R2PMsg::Exit).unwrap(); // Send Exit on High priority
 
-        assert_eq!(rx.get_row(), PriorityChannelStatus::Message(R2PMsg::Exit));
+        assert_eq!(rx.try_recv(), Ok(R2PMsg::Exit));
     }
 
     #[test]
     fn test_empty_channel() {
         let (_tx, mut rx) = priority_channel::<R2PMsg<TestMsg>>();
-        assert_eq!(rx.get_row(), PriorityChannelStatus::Empty);
+        assert_eq!(rx.try_recv(), PriorityChannelStatus::Empty);
     }
     #[test]
     /*fn test_partial_disconnect_behavior() {
