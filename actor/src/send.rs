@@ -15,7 +15,7 @@ use crate::{
 };
 
 #[allow(clippy::type_complexity)]
-pub(crate) async fn tx2<M, E, BS>(
+pub(crate) async fn tx<M, E, BS>(
     my_addr: ActorAddrRef,
     mut before_send: Option<BS>,
     mut p_rx: mpsc::UnboundedReceiver<M>,

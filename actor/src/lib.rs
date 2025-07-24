@@ -3,8 +3,8 @@ use std::marker::PhantomData;
 use bincode::{Decode, Encode};
 use err::ActorError;
 use futures::future::join_all;
-use recv::rx2;
-use send::tx2;
+use recv::rx;
+use send::tx;
 use tokio::{
     sync::mpsc::{self},
     task::JoinHandle,
@@ -244,7 +244,7 @@ where
         .map(|gene| tokio::spawn(generator(gene, r2p_tx.clone())))
         .collect();
 
-    let rx_handle = tokio::spawn(rx2(
+    let rx_handle = tokio::spawn(rx(
         my_addr.clone().leak(),
         reciever,
         r2p_tx,
@@ -270,7 +270,7 @@ where
             tracing::info!("[ACTOR][{}] Processor Ended", addr);
             Ok(())
         });
-    let tx_handle = tokio::spawn(tx2(my_addr.leak(), sender, p2s_rx, controller_tx, codec));
+    let tx_handle = tokio::spawn(tx(my_addr.leak(), sender, p2s_rx, controller_tx, codec));
     rx_handle.await??;
     proc_handle.await??;
     tx_handle.await?;

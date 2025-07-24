@@ -59,7 +59,7 @@ use crate::{
 ///   Spawns tasks to receive messages from incoming network or local control channels,
 ///   decode them, and forward them for processing based on channel state.
 ///
-pub(crate) async fn rx2<M, AR, D>(
+pub(crate) async fn rx<M, AR, D>(
     my_addr: ActorAddrRef,
     reciever: Option<AR>,
     p_tx: mpsc::UnboundedSender<R2PMsg<M>>,
