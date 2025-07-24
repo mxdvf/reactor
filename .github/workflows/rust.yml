@@ -34,8 +34,8 @@ jobs:
 
     - name: Run Ping Pong
       run: |
-          make install_node
-          make install_jobc
+          cd examples/ping_pong
+          make install
           make build_ops
           make node &
           sleep 1
