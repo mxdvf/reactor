@@ -55,7 +55,6 @@ async fn main() {
 mod tests {
     use super::*;
     use reactor_jobm::placement::PhysicalOp;
-    use serde::de::Unexpected::Option;
     use std::collections::HashMap;
 
     #[test]
