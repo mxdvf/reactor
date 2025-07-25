@@ -741,6 +741,7 @@ dependencies = [
  "criterion",
  "futures",
  "log",
+ "reactor-macros",
  "socket2",
  "thiserror",
  "tokio",

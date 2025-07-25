@@ -1262,6 +1262,7 @@ dependencies = [
  "criterion",
  "futures",
  "log",
+ "reactor-macros",
  "socket2",
  "thiserror",
  "tokio",
@@ -1343,6 +1344,7 @@ dependencies = [
  "env_logger",
  "reactor-jobm",
  "serde",
+ "serde_json",
  "tokio",
  "toml",
 ]

@@ -1,17 +1,19 @@
 pub use reactor_actor::setup_shared_logger_ref;
 
 use bincode::{Decode, Encode};
-use reactor_actor::{ActorAddrRef, Msg, BehaviourBuilder};
+use reactor_actor::HasPriority;
+use reactor_actor::Msg;
+use reactor_actor::RuntimeCtx;
+use reactor_actor::codec::BincodeCodec;
+use reactor_actor::{ActorAddrRef, BehaviourBuilder};
+use reactor_macros::{DefaultPrio, Msg as DeriveMsg};
 use std::collections::HashMap;
 use std::time::Duration;
-use reactor_actor::HasPriority;
-use reactor_actor::codec::LengthDelimitedCodec;
-use reactor_macros::MsgWithDefaultPriority;
 
 // //////////////////////////////////////////////////////////////////////////////
 //                                    MSG
 // //////////////////////////////////////////////////////////////////////////////
-#[derive(Encode, Decode, Debug, Clone, MsgWithDefaultPriority)]
+#[derive(Encode, Decode, Debug, Clone, DefaultPrio, DeriveMsg)]
 pub enum PingPongMsg {
     Ping,
     Pong,
@@ -48,23 +50,26 @@ impl reactor_actor::ActorSend for Sender {
         &self.other_addr
     }
 }
+impl Sender {
+    fn new(other_actor: ActorAddrRef) -> Self {
+        Sender {
+            other_addr: vec![other_actor],
+        }
+    }
+}
 
 // //////////////////////////////////////////////////////////////////////////////
 //                                ACTORS
 // //////////////////////////////////////////////////////////////////////////////
 
-pub async fn actor(node_comm: reactor_actor::NodeComm, my_addr: ActorAddrRef, other_addr: ActorAddrRef) {
-    let mut bb = BehaviourBuilder::new(Processor{}).send(
-            Sender {
-                other_addr: vec![other_addr],
-            }
-        );
-    if my_addr == "pinger" {
-        bb = bb.generator(Box::new(vec![PingPongMsg::Ping].into_iter()));
-    }
-    let behaviour = bb.build();
-
-    reactor_actor::actor(my_addr, behaviour, LengthDelimitedCodec::default(), node_comm)
+pub async fn actor(ctx: RuntimeCtx, other_addr: ActorAddrRef) {
+    BehaviourBuilder::new(Processor {})
+        .send(Sender::new(other_addr))
+        .generator_if(ctx.addr == "pinger", || {
+            Box::new(vec![PingPongMsg::Ping].into_iter())
+        })
+        .build()
+        .run(ctx, BincodeCodec::default())
         .await
         .unwrap();
 }
@@ -74,11 +79,7 @@ lazy_static::lazy_static! {
 }
 
 #[unsafe(no_mangle)]
-pub fn pingpong(
-    actor_name: &'static str,
-    node_comm: reactor_actor::NodeComm,
-    mut payload: HashMap<String, serde_json::Value>,
-) {
+pub fn pingpong(ctx: RuntimeCtx, mut payload: HashMap<String, serde_json::Value>) {
     let other = payload.remove("other").unwrap();
-    RUNTIME.spawn(actor(node_comm, actor_name, other.as_str().unwrap().to_string().leak()));
+    RUNTIME.spawn(actor(ctx, other.as_str().unwrap().to_string().leak()));
 }

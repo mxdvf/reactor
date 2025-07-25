@@ -55,6 +55,7 @@ async fn main() {
 mod tests {
     use super::*;
     use reactor_jobm::placement::PhysicalOp;
+    use serde_json::json;
     use std::collections::HashMap;
 
     #[test]
@@ -103,7 +104,7 @@ port = 3000
                     vec![PhysicalOp {
                         nodename: "node1".into(),
                         actor_name: "pinger".into(),
-                        payload: HashMap::from([("other".to_string(), "ponger".to_string())]),
+                        payload: HashMap::from([("other".to_string(), json!("ponger"))]),
                     }],
                 ),
                 (
