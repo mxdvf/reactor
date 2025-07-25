@@ -22,6 +22,7 @@ mod send;
 pub use node_comm::{Connection, ControlInst, ControlReq, NodeComm};
 pub use prio_channel::{HasPriority, MAX_PRIO};
 
+static CHANNEL_SIZE: usize = 1 << 20;
 /// Messages that can flow between the actors.
 pub trait Msg: Send + Sync + std::fmt::Debug + HasPriority + 'static + Clone {}
 
@@ -366,7 +367,8 @@ where
     let my_addr = addr.to_string();
     // let (r2p_tx, mut r2p_rx) = mpsc::unbounded_channel::<R2PMsg<I>>();
     let (p2s_tx, p2s_rx) = mpsc::unbounded_channel::<O>();
-    let (r2p_tx, mut r2p_rx) = priority_channel::<R2PMsg<I>>(behaviour.num_prios.unwrap_or(1));
+    let (r2p_tx, mut r2p_rx) =
+        priority_channel::<R2PMsg<I>>(behaviour.num_prios.unwrap_or(1), CHANNEL_SIZE);
 
     let (controller_rx, controller_tx) = node_comm.split();
 
@@ -431,7 +433,7 @@ where
     M: Msg + 'static,
 {
     for m in generator {
-        p_tx.send(R2PMsg::Msg(m)).unwrap();
+        p_tx.send(R2PMsg::Msg(m)).await.unwrap();
     }
     Ok(())
 }

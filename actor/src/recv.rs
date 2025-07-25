@@ -101,7 +101,9 @@ where
             }
             ControlInst::Stop => {
                 cancel_token.cancel();
-                p_tx.send(R2PMsg::Exit).map_err(|_| ActorError::R2PErr)?;
+                p_tx.send(R2PMsg::Exit)
+                    .await
+                    .map_err(|_| ActorError::R2PErr)?;
                 break;
             }
         }
@@ -215,10 +217,10 @@ async fn remote_parent_recv_subtask<M, AR, D, RX>(
                         break;
                     }
                 }
-                if row_q.send(R2PMsg::Msg(msg)).is_err() {
+                if row_q.send(R2PMsg::Msg(msg)).await.is_err() {
                     break;
                 }
-            } else if row_q.send(R2PMsg::Msg(msg)).is_err() {
+            } else if row_q.send(R2PMsg::Msg(msg)).await.is_err() {
                 break;
             }
         }
@@ -255,10 +257,10 @@ async fn local_parent_recv_subtask<M, AR>(
                         break;
                     }
                 }
-                if row_q.send(R2PMsg::Msg(*msg.clone())).is_err() {
+                if row_q.send(R2PMsg::Msg(*msg.clone())).await.is_err() {
                     break;
                 }
-            } else if row_q.send(R2PMsg::Msg(*msg.clone())).is_err() {
+            } else if row_q.send(R2PMsg::Msg(*msg.clone())).await.is_err() {
                 break;
             }
         }
