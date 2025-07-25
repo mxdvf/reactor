@@ -1065,6 +1065,7 @@ dependencies = [
  "env_logger",
  "reactor-jobm",
  "tokio",
+ "toml",
 ]
 
 [[package]]

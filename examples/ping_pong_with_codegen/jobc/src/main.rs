@@ -12,7 +12,7 @@ use reactor_jobm::JobController;
 use reactor_jobm::placement::{LibInfo, LogicalOp, ManualPlacementManager, PhysicalOp};
 use std::collections::HashMap;
 use std::time::Duration;
-
+use toml::Value;
 
 #[tokio::main]
 async fn main() {
@@ -29,7 +29,7 @@ async fn main() {
                 vec![PhysicalOp {
                     nodename: "node1".to_string(),
                     actor_name: "pinger".to_string(),
-                    payload: HashMap::from([("other".to_string(), "pinger".to_string())])
+                    payload: HashMap::from([("other".to_string(), Value::String("pinger".to_string()))])
                 }],
             ),
             (
@@ -37,7 +37,7 @@ async fn main() {
                 vec![PhysicalOp {
                     nodename: "node1".to_string(),
                     actor_name: "ponger".to_string(),
-                    payload: HashMap::from([("other".to_string(), "pinger".to_string())])
+                    payload: HashMap::from([("other".to_string(), Value::String("pinger".to_string()))])
                 }],
             ),
         ]),

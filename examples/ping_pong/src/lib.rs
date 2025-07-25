@@ -140,8 +140,8 @@ lazy_static::lazy_static! {
 pub fn pingpong(
     actor_name: &'static str,
     node_comm: reactor_actor::NodeComm,
-    mut payload: HashMap<String, String>,
+    mut payload: HashMap<String, serde_json::Value>,
 ) {
     let other = payload.remove("other").unwrap();
-    RUNTIME.spawn(actor(node_comm, actor_name, other.leak()));
+    RUNTIME.spawn(actor(node_comm, actor_name, other.as_str().unwrap().to_string().leak()));
 }

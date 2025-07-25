@@ -31,7 +31,7 @@ pub(crate) struct SpawnArgs {
     pub actor_name: String,
     pub operator_name: String,
     pub lib_name: String,
-    pub payload: HashMap<String, String>,
+    pub payload: HashMap<String, Value>,
 }
 
 #[cfg_attr(feature = "swagger", derive(ToSchema))]

@@ -15,7 +15,6 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use code_gen::CodeGenerator;
 #[cfg(feature = "dynop")]
 use lib_builder::LibBuilder;
-#[cfg(feature = "dynop")]
 use serde_json::Value;
 #[cfg(not(feature = "dynop"))]
 use std::path::PathBuf;
@@ -29,7 +28,7 @@ use rpc::webserver;
 mod op_lib_manager;
 
 pub type NodeAddr = &'static str;
-pub type ActorSpawnCB = fn(ActorAddr, NodeComm, HashMap<String, String>);
+pub type ActorSpawnCB = fn(ActorAddr, NodeComm, HashMap<String, Value>);
 
 pub type SetupSharedLogger = fn(SharedLogger);
 
@@ -58,7 +57,7 @@ pub(crate) enum JobControllerReq {
         lib_name: String,
         op_name: String,
         resp_tx: oneshot::Sender<Option<SpawnResult>>,
-        payload: HashMap<String, String>,
+        payload: HashMap<String, Value>,
     },
     RemoteActorAdded {
         addr: ActorAddr,
