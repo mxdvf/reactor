@@ -1,34 +1,30 @@
 use std::marker::PhantomData;
 
 use bincode::{Decode, Encode};
-use err::ActorError;
+use err::{ActorError, DecodeErr};
 use futures::future::join_all;
+use prio_channel::{PriorityChannelTx, priority_channel};
 use recv::rx;
 use send::tx;
 use tokio::{
-    sync::mpsc::{self},
+    sync::mpsc::{self, error::TryRecvError},
     task::JoinHandle,
 };
 use tokio_util::codec::{Decoder, Encoder};
 pub use tracing_shared::setup_shared_logger_ref;
-// use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub mod common;
-mod err;
+pub mod err;
 mod node_comm;
+mod prio_channel;
 mod recv;
 mod send;
 pub use node_comm::{Connection, ControlInst, ControlReq, NodeComm};
+pub use prio_channel::{HasPriority, MAX_PRIO};
 
-/// State of the Processor
-pub trait State: Default + Send {}
-/// State of the Receiver
-pub trait RState: Default + Send {}
-/// State of the Sender
-pub trait SState: Default + Send {}
-
+static CHANNEL_SIZE: usize = 1 << 20;
 /// Messages that can flow between the actors.
-pub trait Msg: Send + Sync + std::fmt::Debug + 'static + Clone {}
+pub trait Msg: Send + Sync + std::fmt::Debug + HasPriority + 'static + Clone {}
 
 /// Addr of the actors
 pub type ActorAddrRef = &'static str;
@@ -36,6 +32,7 @@ pub type ActorAddr = String;
 
 #[derive(Encode, Decode, Debug, Clone)]
 pub struct EmptyMsg;
+impl HasPriority for EmptyMsg {}
 impl Msg for EmptyMsg {}
 
 /// Represents the action to take after receiving and decoding a message from a channel.
@@ -68,20 +65,38 @@ pub enum ChannelAction {
     CLOSE,
 }
 
-pub struct DecodeErr;
-impl From<std::io::Error> for DecodeErr {
-    fn from(_: std::io::Error) -> Self {
-        DecodeErr
-    }
-}
-
+#[derive(Debug, PartialEq, Clone)]
 enum R2PMsg<T> {
     Msg(T),
     Exit,
 }
 
+impl<T: HasPriority> HasPriority for R2PMsg<T> {
+    fn priority(&self) -> usize {
+        match self {
+            R2PMsg::Msg(t) => t.priority(),
+            R2PMsg::Exit => MAX_PRIO, // How to make it highest priority?!
+        }
+    }
+}
+
+/// The `ActorRecv` trait defines what action to take based on incoming message.
+///
+/// It defines a single asynchronous method, [`ActorRecv::after_recv`], that is called after a message is received.
+///
+/// # Type Parameters
+/// - `IMsg`: The type of the message this actor receives. It must implement the [`Msg`] trait.
+///
 pub trait ActorRecv: Send + 'static {
+    /// The input message type that this actor receives.
     type IMsg: Msg;
+    /// Called after the actor receives a message.
+    ///
+    /// This asynchronous method is invoked with:
+    /// - `worker_id`: A reference to the address of the sending actor.
+    /// - `input`: A reference to the message that was received.
+    ///
+    /// It returns [`ChannelAction`] that determines how the actor should proceed.
     fn after_recv(
         &mut self,
         worker_id: ActorAddrRef,
@@ -99,23 +114,76 @@ impl<M: Msg> ActorRecv for NoOpActorRecv<M> {
     }
 }
 
+/// The `ActorProcess` trait defines the processing logic for an actor that transforms
+/// input messages into one or more output messages.
+///
+/// # Example
+/// ```ignore
+/// struct Incrementer;
+///
+/// impl ActorProcess for Incrementer {
+///     type IMsg = i32;
+///     type OMsg = i32;
+///
+///     fn process(&mut self, input: i32) -> Vec<i32> {
+///         vec![input + 1]
+///     }
+/// }
+///
 pub trait ActorProcess: Send + 'static {
+    /// The type of messages this actor accepts as input.
     type IMsg: Msg;
+
+    /// The type of messages this actor produces as output.
     type OMsg: Msg;
 
+    /// Processes an input message and returns a list of output messages.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - The input message to be processed.
+    ///
+    /// # Returns
+    ///
+    /// A vector of output messages of type [`Self::OMsg`].
     fn process(&mut self, input: Self::IMsg) -> Vec<Self::OMsg>;
 }
 
-// pub trait ActorSend: Send + 'static {
-//     type OMsg: Msg;
-//     fn before_send<'a>(
-//         &'a mut self,
-//         output: &Self::OMsg,
-//     ) -> impl std::future::Future<Output = &'a Vec<ActorAddrRef>> + Send;
-// }
-
+/// The `ActorSend` trait defines how an actor determines the recipients of a message
+/// before it is sent.
+///
+/// # Example
+/// ```ignore
+/// struct Broadcaster {
+///     peers: Vec<ActorAddrRef>,
+/// }
+///
+/// impl ActorSend for Broadcaster {
+///     type OMsg = MyMessage;
+///
+///     async fn before_send<'a>(
+///         &'a mut self,
+///         _output: &Self::OMsg,
+///     ) -> &'a Vec<ActorAddrRef> {
+///         &self.peers
+///     }
+/// }
+///
 pub trait ActorSend: Send + 'static {
+    /// The type of output messages that this actor sends.
     type OMsg: Msg;
+
+    /// Called before an output message is sent.
+    ///
+    /// This asynchronous method returns the list of recipients that the message should be sent to.
+    ///
+    /// # Arguments
+    ///
+    /// * `output` - A reference to the message that is about to be sent.
+    ///
+    /// # Returns
+    ///
+    /// a list of [`ActorAddrRef`] indicating the recipient actors.
     fn before_send<'a>(
         &'a mut self,
         output: &Self::OMsg,
@@ -132,22 +200,61 @@ impl<M: Msg> ActorSend for NoOpActorSend<M> {
     }
 }
 
+/// The `Behaviour` struct encapsulates the complete behavior of an actor,
+/// including how it receives messages, processes them, sends output,
+/// and optionally generates new messages.
+///
+/// # Type Parameters
+///
+/// - `R`: The type implementing the receiving behavior (must implement [`ActorRecv`]).
+/// - `P`: The type implementing the processing behavior (must implement [`ActorProcess`]).
+/// - `S`: The type implementing the sending behavior (must implement [`ActorSend`]).
+/// - `M`: The type of message generated internally (e.g., from generators).
+///
+/// # Fields
+///
+/// - `recv`: Optional receiver logic implementing `ActorRecv`.
+/// - `proc`: The core processing logic implementing `ActorProcess`.
+/// - `send`: Optional sender logic implementing `ActorSend`.
+/// - `generators`: A list of internal message generators, producing messages of type `M`.
+///
 pub struct Behaviour<R, P, S, M> {
     recv: Option<R>,
     proc: P,
     send: Option<S>,
     generators: Vec<Box<dyn Iterator<Item = M> + Send>>,
+    num_prios: Option<usize>,
 }
+
 impl<P, IM, OM> Behaviour<NoOpActorRecv<IM>, P, NoOpActorSend<OM>, EmptyMsg>
 where
     P: ActorProcess<IMsg = IM, OMsg = OM>,
 {
+    /// Constructs a [`Behaviour`] that only has processing logic, with no explicit
+    /// receive or send behavior.
+    ///
+    /// This is useful for actors that dont have a logic to handle received
+    /// messages and send message to a blackhole.
+    ///
+    /// # Arguments
+    ///
+    /// * `proc` - The processing logic implementing [`ActorProcess`].
+    ///
+    /// # Returns
+    ///
+    /// A `Behaviour` with `NoOpActorRecv` and `NoOpActorSend` as defaults for `recv` and `send`.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let behaviour = Behaviour::with_proc_only(MyProcessor {});
+    /// ```
     pub fn with_proc_only(proc: P) -> Behaviour<NoOpActorRecv<IM>, P, NoOpActorSend<OM>, IM> {
         Behaviour {
             recv: None,
             proc,
             send: None,
             generators: Vec::new(),
+            num_prios: None,
         }
     }
 }
@@ -157,12 +264,32 @@ where
     P: ActorProcess<OMsg = O, IMsg = M>,
     S: ActorSend<OMsg = O>,
 {
+    /// Constructs a [`Behaviour`] that only has processing logic and a routing logic with no explicit
+    /// receive behavior.
+    ///
+    /// This is useful for actors that dont have a logic to handle received
+    /// messages.
+    ///
+    /// # Arguments
+    ///
+    /// * `proc` - The processing logic implementing [`ActorProcess`].
+    /// * `send` - The routing logic implementing [`ActorSend`].
+    ///
+    /// # Returns
+    ///
+    /// A `Behaviour` with `NoOpActorRecv` for `recv`.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let behaviour = Behaviour::with_send(MyProcessor {});
+    /// ```
     pub fn with_send(proc: P, send: S) -> Behaviour<NoOpActorRecv<M>, P, S, M> {
         Behaviour {
             recv: None,
             proc,
             send: Some(send),
             generators: Vec::new(),
+            num_prios: None,
         }
     }
 }
@@ -178,6 +305,7 @@ where
             proc,
             send: None,
             generators: Vec::new(),
+            num_prios: None,
         }
     }
 }
@@ -194,11 +322,19 @@ where
             proc,
             send: Some(send),
             generators: Vec::new(),
+            num_prios: None,
         }
     }
 
     pub fn add_generator(&mut self, generator: Box<dyn Iterator<Item = I> + Send>) {
         self.generators.push(generator);
+    }
+    pub fn num_prios(&mut self, prios: usize) {
+        if prios == 0 {
+            self.num_prios = None;
+        } else {
+            self.num_prios = Some(prios)
+        }
     }
 }
 
@@ -229,8 +365,10 @@ where
     CD: Encoder<O> + Decoder<Item = I, Error = DecodeErr> + Send + Sync + Clone + 'static,
 {
     let my_addr = addr.to_string();
-    let (r2p_tx, mut r2p_rx) = mpsc::unbounded_channel::<R2PMsg<I>>();
+    // let (r2p_tx, mut r2p_rx) = mpsc::unbounded_channel::<R2PMsg<I>>();
     let (p2s_tx, p2s_rx) = mpsc::unbounded_channel::<O>();
+    let (r2p_tx, mut r2p_rx) =
+        priority_channel::<R2PMsg<I>>(behaviour.num_prios.unwrap_or(1), CHANNEL_SIZE);
 
     let (controller_rx, controller_tx) = node_comm.split();
 
@@ -241,7 +379,10 @@ where
 
     let gen_handles: Vec<tokio::task::JoinHandle<_>> = generators
         .drain(..)
-        .map(|gene| tokio::spawn(generator(gene, r2p_tx.clone())))
+        .map(|gene| {
+            let tx = r2p_tx.clone();
+            tokio::spawn(generator(gene, tx))
+        })
         .collect();
 
     let rx_handle = tokio::spawn(rx(
@@ -256,15 +397,23 @@ where
     let proc_handle: JoinHandle<Result<(), ActorError>> =
         tokio::task::spawn_blocking(move || -> Result<(), ActorError> {
             tracing::info!("[ACTOR][{}] Processor Started", addr);
-            while let Some(i) = r2p_rx.blocking_recv() {
-                if let R2PMsg::Msg(msg) = i {
-                    let processed_messages = processor.process(msg);
-
-                    for message in processed_messages {
-                        p2s_tx.send(message).map_err(|_| ActorError::P2SErr)?;
+            loop {
+                match r2p_rx.try_recv() {
+                    Ok(R2PMsg::Msg(m)) => {
+                        let processed = processor.process(m);
+                        for o in processed {
+                            p2s_tx.send(o).map_err(|_| ActorError::P2SErr)?;
+                        }
                     }
-                } else {
-                    break;
+                    Ok(R2PMsg::Exit) => {
+                        break;
+                    }
+                    Err(TryRecvError::Empty) => {
+                        continue;
+                    }
+                    Err(TryRecvError::Disconnected) => {
+                        break;
+                    }
                 }
             }
             tracing::info!("[ACTOR][{}] Processor Ended", addr);
@@ -278,17 +427,13 @@ where
     Ok(())
 }
 
-type SendBuffer<M> = mpsc::UnboundedSender<M>;
-async fn generator<G, M>(
-    generator: G,
-    p_tx: mpsc::UnboundedSender<R2PMsg<M>>,
-) -> Result<(), ActorError>
+async fn generator<G, M>(generator: G, p_tx: PriorityChannelTx<R2PMsg<M>>) -> Result<(), ActorError>
 where
     G: Iterator<Item = M>,
     M: Msg + 'static,
 {
     for m in generator {
-        p_tx.send(R2PMsg::Msg(m)).map_err(|_| ActorError::R2PErr)?;
+        p_tx.send(R2PMsg::Msg(m)).await.unwrap();
     }
     Ok(())
 }

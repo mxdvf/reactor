@@ -21,3 +21,10 @@ pub enum ActorError {
     #[error("Task Join Error: {0}")]
     JoinErr(#[from] JoinError),
 }
+
+pub struct DecodeErr;
+impl From<std::io::Error> for DecodeErr {
+    fn from(_: std::io::Error) -> Self {
+        DecodeErr
+    }
+}

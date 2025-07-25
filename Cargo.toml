@@ -8,7 +8,7 @@ members = [
     "generic_jctrl"
 ]
 
-exclude = ["examples"]
+# exclude = ["examples"]
 resolver = "2"
 
 [workspace.package]

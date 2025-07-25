@@ -18,7 +18,7 @@ use crate::{
     node_comm::{Connection, ControlReq},
 };
 
-use super::{ChannelAction, RState, SState, State};
+use super::ChannelAction;
 
 pub fn receiver_task<M, C, D, AR, RX>(
     rx: RX,
@@ -124,20 +124,3 @@ where
         };
     })
 }
-
-fn _blackhole_sender<M, C>(
-    _addr: ActorAddrRef,
-    mut rx: mpsc::UnboundedReceiver<M>,
-    _encoder: C,
-    _controller_tx: mpsc::Sender<ControlReq>,
-) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>
-where
-    M: Send + 'static,
-    C: Encoder<M> + 'static + Send,
-{
-    Box::pin(async move { while rx.recv().await.is_some() {} })
-}
-
-impl RState for () {}
-impl SState for () {}
-impl State for () {}

@@ -20,6 +20,7 @@ use crate::{
     ActorAddrRef, ActorRecv, ChannelAction, DecodeErr, Msg, R2PMsg,
     err::{ActorError, RecieverErr},
     node_comm::{ControlInst, LocalChannelRx},
+    prio_channel::PriorityChannelTx,
 };
 
 /// Spawns tasks to receive messages from incoming network or local control channels,
@@ -62,7 +63,7 @@ use crate::{
 pub(crate) async fn rx<M, AR, D>(
     my_addr: ActorAddrRef,
     reciever: Option<AR>,
-    p_tx: mpsc::UnboundedSender<R2PMsg<M>>,
+    p_tx: PriorityChannelTx<R2PMsg<M>>,
     decoder: D,
     mut controller_rx: mpsc::Receiver<ControlInst>,
 ) -> Result<(), ActorError>
@@ -100,7 +101,9 @@ where
             }
             ControlInst::Stop => {
                 cancel_token.cancel();
-                p_tx.send(R2PMsg::Exit).map_err(|_| ActorError::R2PErr)?;
+                p_tx.send(R2PMsg::Exit)
+                    .await
+                    .map_err(|_| ActorError::R2PErr)?;
                 break;
             }
         }
@@ -115,7 +118,7 @@ async fn tcp_recv<D, M, AR>(
     port: u16,
     cancel_token: CancellationToken,
     decoder: D,
-    p_tx: mpsc::UnboundedSender<R2PMsg<M>>,
+    p_tx: PriorityChannelTx<R2PMsg<M>>,
     cstate: Option<Arc<Mutex<AR>>>,
 ) -> Result<(), ActorError>
 where
@@ -186,13 +189,14 @@ async fn recv_remote_handshake(rx: &mut OwnedReadHalf) -> String {
 
 async fn remote_parent_recv_subtask<M, AR, D, RX>(
     parent_addr: String,
-    row_q: mpsc::UnboundedSender<R2PMsg<M>>,
+    row_q: PriorityChannelTx<R2PMsg<M>>,
     cstate: Option<Arc<Mutex<AR>>>,
     mut framed_reader: FramedRead<RX, D>,
 ) where
     AR: ActorRecv<IMsg = M>,
     D: Decoder<Item = M>,
     RX: AsyncRead + Unpin,
+    M: Msg,
 {
     tracing::info!("[ACTOR] SubRx Started");
     let parent_addr = parent_addr.leak();
@@ -213,10 +217,10 @@ async fn remote_parent_recv_subtask<M, AR, D, RX>(
                         break;
                     }
                 }
-                if row_q.send(R2PMsg::Msg(msg)).is_err() {
+                if row_q.send(R2PMsg::Msg(msg)).await.is_err() {
                     break;
                 }
-            } else if row_q.send(R2PMsg::Msg(msg)).is_err() {
+            } else if row_q.send(R2PMsg::Msg(msg)).await.is_err() {
                 break;
             }
         }
@@ -226,7 +230,7 @@ async fn remote_parent_recv_subtask<M, AR, D, RX>(
 
 async fn local_parent_recv_subtask<M, AR>(
     parent_addr: String,
-    row_q: mpsc::UnboundedSender<R2PMsg<M>>,
+    row_q: PriorityChannelTx<R2PMsg<M>>,
     after_recv: Option<Arc<Mutex<AR>>>,
     mut local_rx: LocalChannelRx,
 ) where
@@ -253,10 +257,10 @@ async fn local_parent_recv_subtask<M, AR>(
                         break;
                     }
                 }
-                if row_q.send(R2PMsg::Msg(*msg.clone())).is_err() {
+                if row_q.send(R2PMsg::Msg(*msg.clone())).await.is_err() {
                     break;
                 }
-            } else if row_q.send(R2PMsg::Msg(*msg.clone())).is_err() {
+            } else if row_q.send(R2PMsg::Msg(*msg.clone())).await.is_err() {
                 break;
             }
         }
