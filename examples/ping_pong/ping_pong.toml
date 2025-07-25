@@ -1,0 +1,19 @@
+[[ops]]
+name = "pingpong"
+lib_name = "ping_pong_actor"
+
+[[nodes]]
+name = "node1"
+hostname = "0.0.0.0"
+port = 3000
+
+[placement]
+  [[placement.pingpong]]
+  nodename = "node1"
+  actor_name = "pinger"
+  other = "ponger"
+
+  [[placement.pingpong]]
+  nodename = "node1"
+  actor_name = "ponger"
+  other = "pinger"

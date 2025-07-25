@@ -1,15 +1,12 @@
 //! One Node Controller task will be spawned on each physical nodes.
 use core::panic;
 use op_lib_manager::OpLibrary;
-use reactor_actor::{Connection, ControlInst, ControlReq};
+use reactor_actor::{Connection, ControlInst, ControlReq, NodeComm};
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use tokio::{
-    io::simplex,
-    sync::{
-        mpsc::{self, Sender, UnboundedReceiver, UnboundedSender, channel, unbounded_channel},
-        oneshot,
-    },
+use tokio::sync::{
+    mpsc::{self, Sender, UnboundedReceiver, channel, unbounded_channel},
+    oneshot,
 };
 use tracing_shared::SharedLogger;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -25,16 +22,14 @@ use std::path::PathBuf;
 
 #[cfg(feature = "dynop")]
 pub mod code_gen;
+#[cfg(feature = "dynop")]
+pub mod lib_builder;
 mod rpc;
 use rpc::webserver;
 mod op_lib_manager;
 
-#[cfg(feature = "dynop")]
-mod lib_builder;
-
 pub type NodeAddr = &'static str;
-pub type ActorSpawnCB =
-    fn(mpsc::UnboundedReceiver<ControlInst>, mpsc::Sender<ControlReq>, ActorAddr);
+pub type ActorSpawnCB = fn(ActorAddr, NodeComm, HashMap<String, String>);
 
 pub type SetupSharedLogger = fn(SharedLogger);
 
@@ -63,6 +58,7 @@ pub(crate) enum JobControllerReq {
         lib_name: String,
         op_name: String,
         resp_tx: oneshot::Sender<Option<SpawnResult>>,
+        payload: HashMap<String, String>,
     },
     RemoteActorAdded {
         addr: ActorAddr,
@@ -72,7 +68,7 @@ pub(crate) enum JobControllerReq {
 }
 
 struct LocalActor {
-    handle: UnboundedSender<ControlInst>,
+    handle: Sender<ControlInst>,
 }
 struct RemoteActor {
     remote_actor_addr: SocketAddr,
@@ -92,7 +88,7 @@ pub async fn node_controller(port: u16, operator_dir: PathBuf) {
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
-    log::info!("[Node] Controller Start");
+    log::info!("[Node] Controller Start on port {port}");
 
     let ops = load_ops(operator_dir);
 
@@ -119,7 +115,9 @@ fn load_ops(operator_dir: PathBuf) -> OpLibrary {
         for entry in fs::read_dir(operator_dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
-            if path.extension() == Some(OsStr::new("so")) {
+            if path.extension() == Some(OsStr::new("so"))
+                || path.extension() == Some(OsStr::new("dylib"))
+            {
                 let file_stem = path.file_stem().unwrap().to_string_lossy().to_string();
                 let lib_name = file_stem
                     .strip_prefix("lib")
@@ -144,6 +142,7 @@ async fn actor_control_loop(
     let mut local_actors: HashMap<ActorAddr, LocalActor> = HashMap::new();
     let mut remote_actors: HashMap<ActorAddr, RemoteActor> = HashMap::new();
     let (actor_control_tx, mut actor_control_rx) = channel(20);
+    let mut port: u16 = 6000;
 
     loop {
         tokio::select! {
@@ -158,7 +157,8 @@ async fn actor_control_loop(
             req = job_control_rx.recv() => {
                 match req {
                     Some(req) => {
-                        handle_job_req(req, &op_lib, &mut local_actors, &mut remote_actors, &actor_control_tx).await;
+                        handle_job_req(req, &op_lib, &mut local_actors, &mut remote_actors, &actor_control_tx, port).await;
+                        port += 1;
                     },
                     None => break,
                 }
@@ -174,6 +174,7 @@ async fn handle_job_req(
     local_actors: &mut HashMap<ActorAddr, LocalActor>,
     remote_actors: &mut HashMap<ActorAddr, RemoteActor>,
     actor_contrl_tx: &Sender<ControlReq>,
+    port: u16,
 ) {
     match req {
         JobControllerReq::SpawnActor {
@@ -181,9 +182,10 @@ async fn handle_job_req(
             op_name,
             resp_tx,
             lib_name,
+            payload,
         } => {
             log::info!("[Node] Spawing Actor {addr} with op: {op_name}");
-            let (control_tx, control_rx) = unbounded_channel();
+            let (control_tx, control_rx) = channel(20);
 
             let lib = op_lib.get_lib(&lib_name);
             unsafe {
@@ -192,10 +194,19 @@ async fn handle_job_req(
                 let logger = SharedLogger::new();
                 shared_logger(logger);
                 let op: libloading::Symbol<ActorSpawnCB> = lib.get(op_name.as_bytes()).unwrap();
-                op(control_rx, actor_contrl_tx.clone(), addr);
-                let port: u16 = 6000;
+                op(
+                    addr,
+                    NodeComm {
+                        controller_rx: control_rx,
+                        controller_tx: actor_contrl_tx.clone(),
+                    },
+                    payload,
+                );
                 resp_tx.send(Some(SpawnResult { port })).unwrap();
-                control_tx.send(ControlInst::StartTcpRecv(port)).unwrap();
+                control_tx
+                    .send(ControlInst::StartTcpRecv(port))
+                    .await
+                    .unwrap();
                 local_actors.insert(addr, LocalActor { handle: control_tx });
             }
         }
@@ -209,10 +220,10 @@ async fn handle_job_req(
             );
         }
         JobControllerReq::StopAllActors => {
-            local_actors.drain().for_each(|(name, actor)| {
+            for (name, actor) in local_actors.drain() {
                 log::info!("[Node] Stopping Actor {name}");
-                actor.handle.send(ControlInst::Stop).unwrap();
-            });
+                actor.handle.send(ControlInst::Stop).await.unwrap();
+            }
         }
     }
 }
@@ -226,16 +237,19 @@ async fn handle_actor_req(
         ControlReq::Resolve { addr, resp_tx } => {
             log::debug!("[Node] Resolving {addr}");
             if let Some(local) = local_actors.get(addr) {
-                let (read_half, write_half) = simplex(1 << 20);
+                let (write_half, read_half) = mpsc::channel(1 << 10);
                 local
                     .handle
                     .send(ControlInst::StartLocalRecv(read_half))
+                    .await
                     .unwrap();
                 resp_tx.send(Connection::Local(write_half)).unwrap();
             } else if let Some(local) = remote_actors.get(addr) {
                 resp_tx
                     .send(Connection::Remote(local.remote_actor_addr))
                     .unwrap();
+            } else if addr == "null" {
+                log::debug!("Received addr {addr}");
             } else {
                 panic!("Couldn't Resolve {}", addr);
             }
@@ -244,7 +258,7 @@ async fn handle_actor_req(
 }
 
 // //////////////////////////////////////////////////////////////////////////////////////////////////
-// /////////////////////////////////////// Dynamic OPerators ////////////////////////////////////////
+// /////////////////////////////////////// Dynamic Operators ////////////////////////////////////////
 // //////////////////////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(feature = "dynop")]
@@ -331,9 +345,10 @@ async fn handle_job_req<CG: CodeGenerator + Send>(
             op_name,
             resp_tx,
             lib_name,
+            payload,
         } => {
             log::info!("[Node] Spawing Actor {addr} with op: {op_name}");
-            let (control_tx, control_rx) = unbounded_channel();
+            let (control_tx, control_rx) = channel(20);
 
             let lib = op_lib.get_lib(&lib_name);
             unsafe {
@@ -342,10 +357,20 @@ async fn handle_job_req<CG: CodeGenerator + Send>(
                 let logger = SharedLogger::new();
                 shared_logger(logger);
                 let op: libloading::Symbol<ActorSpawnCB> = lib.get(op_name.as_bytes()).unwrap();
-                op(control_rx, actor_contrl_tx.clone(), addr);
+                op(
+                    addr,
+                    NodeComm {
+                        controller_rx: control_rx,
+                        controller_tx: actor_contrl_tx.clone(),
+                    },
+                    payload,
+                );
                 let port: u16 = 6000;
                 resp_tx.send(Some(SpawnResult { port })).unwrap();
-                control_tx.send(ControlInst::StartTcpRecv(port)).unwrap();
+                control_tx
+                    .send(ControlInst::StartTcpRecv(port))
+                    .await
+                    .unwrap();
                 local_actors.insert(addr, LocalActor { handle: control_tx });
             }
         }
@@ -359,10 +384,10 @@ async fn handle_job_req<CG: CodeGenerator + Send>(
             );
         }
         JobControllerReq::StopAllActors => {
-            local_actors.drain().for_each(|(name, actor)| {
+            for (name, actor) in local_actors.drain() {
                 log::info!("[Node] Stopping Actor {name}");
-                actor.handle.send(ControlInst::Stop).unwrap();
-            });
+                actor.handle.send(ControlInst::Stop).await.unwrap();
+            }
         }
     }
 }

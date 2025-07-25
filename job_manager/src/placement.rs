@@ -3,7 +3,16 @@ use std::{
     iter,
 };
 
+use serde::Deserialize;
+
 pub type Hostname = &'static str;
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct NodeInfo {
+    pub name: String,
+    pub hostname: String,
+    pub port: u16,
+}
 
 pub struct Placement {
     hostname_to_num: BTreeMap<&'static str, u32>,
@@ -20,25 +29,25 @@ impl Placement {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LibInfo {
     pub name: String,
     pub compile_info: HashMap<String, serde_json::Value>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct LogicalOp {
     pub name: String,
+    pub lib_name: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct PhysicalOp {
-    pub logical: LogicalOp,
     pub nodename: String,
     pub actor_name: String,
-    pub lib_name: String,
-    pub idx: u32,
-    pub peers: u32,
+
+    #[serde(flatten)]
+    pub payload: HashMap<String, String>,
 }
 
 /// Takes logical Op  and places it on single or multiple Nodes. Returns list of Physical operator where a logical operator is placed
@@ -46,6 +55,7 @@ pub trait PlacementManager {
     fn place(&self, op_info: &LogicalOp) -> impl Iterator<Item = PhysicalOp>;
 }
 
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct ManualPlacementManager {
     pub map: HashMap<String, Vec<PhysicalOp>>,
 }

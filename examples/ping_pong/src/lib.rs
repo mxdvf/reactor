@@ -1,67 +1,57 @@
-use std::{sync::Arc, time::Duration, sync::Mutex};
+pub use reactor_actor::setup_shared_logger_ref;
 
 use bincode::{Decode, Encode};
 use reactor_actor::{
-    ActorAddr, ChannelAction, ControlInst, ControlReq, DecodeErr, Msg, RState, SState,
-    State, common::sender_task,
+    ActorAddrRef, Msg, Behaviour
 };
-use tokio::sync::mpsc;
+use reactor_actor::err::DecodeErr;
+use std::collections::HashMap;
+use std::time::Duration;
 use tokio_util::bytes::{Bytes, BytesMut};
+use reactor_actor::HasPriority;
 
 // //////////////////////////////////////////////////////////////////////////////
 //                                    MSG
 // //////////////////////////////////////////////////////////////////////////////
-#[derive(Encode, Decode, Debug)]
+#[derive(Encode, Decode, Debug, Clone)]
 pub enum PingPongMsg {
     Ping,
     Pong,
 }
 
+impl HasPriority for PingPongMsg{}
 impl Msg for PingPongMsg {}
 
 // //////////////////////////////////////////////////////////////////////////////
-//                                RECEIVER STATE
+//                                  Processor
 // //////////////////////////////////////////////////////////////////////////////
-#[derive(Default)]
-struct ChannelState {}
-impl RState for ChannelState {}
+struct Processor;
+impl reactor_actor::ActorProcess for Processor {
+    type IMsg = PingPongMsg;
+    type OMsg = PingPongMsg;
 
-// //////////////////////////////////////////////////////////////////////////////
-//                                PROCESSOR STATE
-// //////////////////////////////////////////////////////////////////////////////
-#[derive(Default)]
-pub struct PingPongState {}
-impl State for PingPongState {}
-
-// //////////////////////////////////////////////////////////////////////////////
-//                                  SENDER STATE
-// //////////////////////////////////////////////////////////////////////////////
-#[derive(Default)]
-struct RouterState {
-    _my_addr: ActorAddr,
-    other_addr: ActorAddr,
-}
-impl SState for RouterState {}
-
-// //////////////////////////////////////////////////////////////////////////////
-//                                  CALLBACKS
-// //////////////////////////////////////////////////////////////////////////////
-fn after_recv(_msg: &PingPongMsg, _channel_state: &Arc<Mutex<ChannelState>>) -> ChannelAction {
-    println!("Rcvd {_msg:?}");
-    ChannelAction::PASS
-}
-
-fn processor(msg: PingPongMsg, _state: &mut PingPongState) -> PingPongMsg {
-    std::thread::sleep(Duration::from_secs(1));
-    match msg {
-        PingPongMsg::Ping => PingPongMsg::Pong,
-        PingPongMsg::Pong => PingPongMsg::Ping,
+    fn process(&mut self, input: Self::IMsg) -> Vec<Self::OMsg> {
+        std::thread::sleep(Duration::from_secs(1));
+        println!("{input:?}");
+        match input {
+            PingPongMsg::Ping => vec![PingPongMsg::Pong],
+            PingPongMsg::Pong => vec![PingPongMsg::Ping],
+        }
     }
 }
 
-fn before_send(_msg: &PingPongMsg, state: &mut RouterState) -> ActorAddr {
-    println!("Sent {_msg:?} to {}", state.other_addr);
-    state.other_addr
+// //////////////////////////////////////////////////////////////////////////////
+//                                  Sender
+// //////////////////////////////////////////////////////////////////////////////
+struct Sender {
+    other_addr: Vec<ActorAddrRef>,
+}
+impl reactor_actor::ActorSend for Sender {
+    type OMsg = PingPongMsg;
+
+    async fn before_send(&mut self, _output: &Self::OMsg) -> &Vec<ActorAddrRef> {
+        &self.other_addr
+    }
 }
 
 // //////////////////////////////////////////////////////////////////////////////
@@ -129,40 +119,32 @@ impl tokio_util::codec::Encoder<PingPongMsg> for PingPongCodec {
 //                                ACTORS
 // //////////////////////////////////////////////////////////////////////////////
 
-fn gen_ping(_i: u64, _s: &mut ()) -> PingPongMsg {
-    println!("Generating ping");
-    PingPongMsg::Ping
-}
-
-pub async fn actor(
-    controller_rx: mpsc::UnboundedReceiver<ControlInst>,
-    controller_tx: mpsc::Sender<ControlReq>,
-    my_addr: ActorAddr,
-    other_addr: ActorAddr,
-) {
-    println!("Myaddr {my_addr}, OtherAddr {other_addr}");
-    let mut generators: Vec<Box<dyn Iterator<Item = PingPongMsg> + Send>> = Vec::new();
-    if my_addr == "pinger" {
-        generators.push(Box::new(vec![PingPongMsg::Ping].into_iter()));
-    }
-    reactor_actor::actor(
-        my_addr,
-        generators,
-        ChannelState::default(),
-        after_recv,
-        PingPongState{},
-        processor,
-        RouterState {
-            _my_addr: my_addr,
-            other_addr,
+pub async fn actor(node_comm: reactor_actor::NodeComm, my_addr: ActorAddrRef, other_addr: ActorAddrRef) {
+    let mut behaviour = Behaviour::with_send(
+        Processor {},
+        Sender {
+            other_addr: vec![other_addr],
         },
-        before_send,
-        PingPongCodec::new(),
-        controller_rx,
-        controller_tx,
-        sender_task,
-    )
-    .await
-    .unwrap();
+    );
+    if my_addr == "pinger" {
+        behaviour.add_generator(Box::new(vec![PingPongMsg::Ping].into_iter()));
+    }
+
+    reactor_actor::actor(my_addr, behaviour, PingPongCodec::new(), node_comm)
+        .await
+        .unwrap();
 }
 
+lazy_static::lazy_static! {
+    static ref RUNTIME: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+}
+
+#[unsafe(no_mangle)]
+pub fn pingpong(
+    actor_name: &'static str,
+    node_comm: reactor_actor::NodeComm,
+    mut payload: HashMap<String, String>,
+) {
+    let other = payload.remove("other").unwrap();
+    RUNTIME.spawn(actor(node_comm, actor_name, other.leak()));
+}

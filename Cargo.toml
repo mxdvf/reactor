@@ -3,10 +3,12 @@ members = [
     "actor",
     "node",
     "rpc_client",
-    "job_manager"
+    "job_manager",
+    "generic_nctrl",
+    "generic_jctrl"
 ]
 
-exclude = ["examples/ping_pong_actor", "examples/ping_pong"]
+# exclude = ["examples"]
 resolver = "2"
 
 [workspace.package]
@@ -25,3 +27,17 @@ futures = "0.3"
 socket2 = "0.5.7"
 thiserror = "2.0"
 
+
+
+
+[profile.profiling]
+inherits = "release"
+debug = true
+opt-level = 0
+codegen-units = 1
+panic = "abort"
+overflow-checks = true
+lto = false
+
+[build]
+rustflags = ["-C", "force-frame-pointers=yes"]

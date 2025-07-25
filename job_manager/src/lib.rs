@@ -10,6 +10,7 @@ use reactor_client::{
 pub mod placement;
 
 struct NodeHandle {
+    hostname: Hostname,
     client_config: reactor_client::apis::configuration::Configuration,
     actors: Vec<RemoteActorInfo>,
     loaded_libs: Vec<String>,
@@ -44,17 +45,19 @@ impl NodeHandle {
         self.loaded_libs.push(lib_info.name.clone());
     }
 
-    async fn place(&mut self, physical_op: &PhysicalOp) -> RemoteActorInfo {
-        let remote_actor_info = reactor_client::apis::default_api::start_actor(
+    async fn place(&mut self, logical_op: &LogicalOp, physical_op: &PhysicalOp) -> RemoteActorInfo {
+        let mut remote_actor_info = reactor_client::apis::default_api::start_actor(
             &self.client_config,
             SpawnArgs {
                 actor_name: physical_op.actor_name.clone(),
-                operator_name: physical_op.logical.name.clone(),
-                lib_name: physical_op.lib_name.clone(),
+                operator_name: logical_op.name.clone(),
+                lib_name: logical_op.lib_name.clone(),
+                payload: physical_op.payload.clone(),
             },
         )
         .await
         .unwrap();
+        remote_actor_info.hostname = self.hostname.to_string();
         self.actors.push(remote_actor_info.clone());
         remote_actor_info
     }
@@ -84,11 +87,12 @@ impl<PM: PlacementManager> JobController<PM> {
             nodes: BTreeMap::new(),
         }
     }
-    pub fn register_node(&mut self, name: &str, hostname: Hostname) {
+    pub fn register_node(&mut self, name: &str, hostname: Hostname, port: u16) {
         self.nodes.insert(
             name.to_string(),
             NodeHandle {
-                client_config: self.client_config(hostname),
+                hostname,
+                client_config: self.client_config(hostname, port),
                 actors: Vec::new(),
                 loaded_libs: Vec::new(),
             },
@@ -107,12 +111,14 @@ impl<PM: PlacementManager> JobController<PM> {
     pub async fn start_job(&mut self, ops: Vec<LogicalOp>) {
         for op in ops {
             for physical_op in self.pm.place(&op) {
+                log::info!("Starting Physical op: {physical_op:?}");
                 let remote_actor_info = self
                     .nodes
                     .get_mut(&physical_op.nodename)
                     .expect("Node must be register before placement")
-                    .place(&physical_op)
+                    .place(&op, &physical_op)
                     .await;
+
                 let handles: Vec<_> = self
                     .nodes
                     .iter()
@@ -141,9 +147,10 @@ impl<PM: PlacementManager> JobController<PM> {
     fn client_config(
         &self,
         hostname: Hostname,
+        port: u16,
     ) -> reactor_client::apis::configuration::Configuration {
         reactor_client::apis::configuration::Configuration {
-            base_path: format!("http://{}:{}", hostname, 3000),
+            base_path: format!("http://{hostname}:{port}"),
             ..Default::default()
         }
     }

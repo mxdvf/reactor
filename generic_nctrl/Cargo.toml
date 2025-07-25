@@ -1,0 +1,19 @@
+[package]
+name = "reactor_nctrl"
+version = "0.1.0"
+edition = "2024"
+
+
+[dependencies]
+env_logger = "0.11.8"
+tokio = { version = "1", features = ["full", "tracing"] }
+reactor-node = { path = "../node" }
+clap = { version = "4", features = ["derive"] }
+serde_json = "1.0.140"
+
+[features]
+default = []
+swagger = ["reactor-node/swagger"]
+
+
+

@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     pin::Pin,
     sync::{Arc, Mutex},
     time::Duration,
@@ -12,9 +13,12 @@ use tokio::{
 };
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 
-use crate::{ActorAddr, Connection, ControlReq, Msg};
+use crate::{
+    ActorAddrRef, Msg,
+    node_comm::{Connection, ControlReq},
+};
 
-use super::{ChannelAction, RState, SState, State};
+use super::ChannelAction;
 
 pub fn receiver_task<M, C, D, AR, RX>(
     rx: RX,
@@ -52,7 +56,7 @@ where
 }
 
 pub fn sender_task<M, C>(
-    addr: ActorAddr,
+    addr: ActorAddrRef,
     rx: mpsc::UnboundedReceiver<M>,
     encoder: C,
     controller_tx: mpsc::Sender<ControlReq>,
@@ -62,7 +66,7 @@ where
     C: Encoder<M> + 'static + Send,
 {
     // Common sender for both local and remote actor.
-    async fn sender<C: Encoder<M> + 'static + Send, M>(
+    async fn remote_sender<C: Encoder<M> + 'static + Send, M>(
         tx: impl AsyncWrite + Unpin,
         mut rx: mpsc::UnboundedReceiver<M>,
         encoder: C,
@@ -72,6 +76,20 @@ where
         loop {
             if let Some(msg) = rx.recv().await {
                 if framed_writer.send(msg).await.is_err() {
+                    break;
+                }
+            }
+        }
+        log::info!("[ACTOR] SubTx Ended");
+    }
+    async fn local_sender<M: Send + 'static>(
+        tx: mpsc::Sender<Box<dyn Any + Send>>,
+        mut rx: mpsc::UnboundedReceiver<M>,
+    ) {
+        log::info!("[ACTOR] SubTx Started (Local)");
+        loop {
+            if let Some(msg) = rx.recv().await {
+                if tx.send(Box::new(msg)).await.is_err() {
                     break;
                 }
             }
@@ -92,7 +110,7 @@ where
                 match TcpStream::connect(socket_addr).await {
                     Ok(s) => {
                         let (_, tx) = s.into_split();
-                        break sender(tx, rx, encoder).await;
+                        break remote_sender(tx, rx, encoder).await;
                     }
                     Err(_) => {
                         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -101,25 +119,8 @@ where
                 }
             },
             Connection::Local(write_half) => {
-                sender(write_half, rx, encoder).await;
+                local_sender(write_half, rx).await;
             }
         };
     })
 }
-
-fn _blackhole_sender<M, C>(
-    _addr: ActorAddr,
-    mut rx: mpsc::UnboundedReceiver<M>,
-    _encoder: C,
-    _controller_tx: mpsc::Sender<ControlReq>,
-) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>
-where
-    M: Send + 'static,
-    C: Encoder<M> + 'static + Send,
-{
-    Box::pin(async move { while rx.recv().await.is_some() {} })
-}
-
-impl RState for () {}
-impl SState for () {}
-impl State for () {}

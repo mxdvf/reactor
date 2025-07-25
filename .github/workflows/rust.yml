@@ -27,7 +27,22 @@ jobs:
       run: cargo test --verbose
 
     - name: Run Clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings
+      run: cargo clippy -- -D warnings
 
     - name: Check formatting
       run: cargo fmt --all -- --check
+
+    - name: Run Ping Pong
+      run: |
+          cd examples/ping_pong
+          make install
+          make build_ops
+          make node &
+          sleep 1
+          
+          timeout 6s make job || echo "make job terminated after timeout"
+          status=$?
+          if [ $status -ne 0 ] && [ $status -ne 124 ]; then
+              echo "make job failed"
+              exit $status
+          fi

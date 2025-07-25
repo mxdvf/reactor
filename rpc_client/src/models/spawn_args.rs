@@ -19,14 +19,22 @@ pub struct SpawnArgs {
     pub lib_name: String,
     #[serde(rename = "operator_name")]
     pub operator_name: String,
+    #[serde(rename = "payload")]
+    pub payload: std::collections::HashMap<String, String>,
 }
 
 impl SpawnArgs {
-    pub fn new(actor_name: String, lib_name: String, operator_name: String) -> SpawnArgs {
+    pub fn new(
+        actor_name: String,
+        lib_name: String,
+        operator_name: String,
+        payload: std::collections::HashMap<String, String>,
+    ) -> SpawnArgs {
         SpawnArgs {
             actor_name,
             lib_name,
             operator_name,
+            payload,
         }
     }
 }

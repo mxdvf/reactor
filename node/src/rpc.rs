@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::HashMap, net::IpAddr, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
     Json, Router,
@@ -10,7 +10,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::{net::lookup_host, sync::mpsc::UnboundedSender};
+use tokio::sync::mpsc::UnboundedSender;
 use tower_http::{classify::ServerErrorsFailureClass, trace::TraceLayer};
 use tracing::{Span, info_span};
 #[cfg(feature = "swagger")]
@@ -26,11 +26,12 @@ struct AppState {
 }
 
 #[cfg_attr(feature = "swagger", derive(ToSchema))]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub(crate) struct SpawnArgs {
     pub actor_name: String,
     pub operator_name: String,
     pub lib_name: String,
+    pub payload: HashMap<String, String>,
 }
 
 #[cfg_attr(feature = "swagger", derive(ToSchema))]
@@ -114,6 +115,7 @@ async fn start_actor(
             resp_tx: tx,
             op_name: args.operator_name,
             lib_name: args.lib_name,
+            payload: args.payload,
         })
         .unwrap();
     let status = rx.await.unwrap();
@@ -143,12 +145,40 @@ async fn actor_added(
     State(state): State<Arc<AppState>>,
     Json(actor_info): Json<RemoteActorInfo>,
 ) -> impl IntoResponse {
-    let remote_ip = lookup_host(actor_info.hostname)
-        .await
-        .unwrap()
-        .next()
-        .unwrap()
-        .ip();
+    /*if let Ok(mut hosts) = lookup_host(&actor_info.hostname).await {
+        if let Some(socket_addr) = hosts.next() {
+            let remote_ip = socket_addr.ip();
+            println!("Resolved remote IP: {}", remote_ip);
+
+            let sock_addr = SocketAddr::new(remote_ip, actor_info.port);
+            println!("Full socket address: {}", sock_addr);
+
+            state
+                .clone()
+                .tx
+                .send(JobControllerReq::RemoteActorAdded {
+                    addr: actor_info.name.leak(),
+                    sock_addr,
+                })
+                .unwrap();
+
+            (axum::http::StatusCode::CREATED, "Actor added!")
+        } else {
+            eprintln!("No IPs resolved for hostname: {}", actor_info.hostname);
+            (axum::http::StatusCode::BAD_REQUEST, "Hostname could not be resolved")
+        }
+    } else {
+        eprintln!("Failed to lookup host: {}", actor_info.hostname);
+        (axum::http::StatusCode::BAD_REQUEST, "Invalid hostname")
+    }*/
+
+    /*let remote_ip = lookup_host(actor_info.hostname)
+    .await
+    .unwrap()
+    .next()
+    .unwrap()
+    .ip();*/
+    let remote_ip: IpAddr = actor_info.hostname.parse().unwrap();
     state
         .clone()
         .tx
@@ -238,7 +268,7 @@ pub async fn webserver(job_control_tx: UnboundedSender<JobControllerReq>, port: 
     #[cfg(feature = "swagger")]
     let app = app.merge(SwaggerUi::new("/docs").url("/api-doc/openapi.json", ApiDoc::openapi()));
 
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}"))
         .await
         .unwrap();
     axum::serve(listener, app).await.unwrap();
