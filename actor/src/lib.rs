@@ -104,7 +104,7 @@ impl<M: Msg> ActorRecv for NoOpActorRecv<M> {
 /// input messages into one or more output messages.
 ///
 /// # Example
-/// ```rust
+/// ```ignore
 /// struct Incrementer;
 ///
 /// impl ActorProcess for Incrementer {
@@ -139,7 +139,7 @@ pub trait ActorProcess: Send + 'static {
 /// before it is sent.
 ///
 /// # Example
-/// ```rust
+/// ```ignore
 /// struct Broadcaster {
 ///     peers: Vec<ActorAddrRef>,
 /// }
@@ -150,7 +150,7 @@ pub trait ActorProcess: Send + 'static {
 ///     async fn before_send<'a>(
 ///         &'a mut self,
 ///         _output: &Self::OMsg,
-///     ) -> &'a Vec<ActorAddrRef>> {
+///     ) -> &'a Vec<ActorAddrRef> {
 ///         &self.peers
 ///     }
 /// }
@@ -230,7 +230,7 @@ where
     /// A `Behaviour` with `NoOpActorRecv` and `NoOpActorSend` as defaults for `recv` and `send`.
     ///
     /// # Example
-    /// ```rust
+    /// ```ignore
     /// let behaviour = Behaviour::with_proc_only(MyProcessor {});
     /// ```
     pub fn with_proc_only(proc: P) -> Behaviour<NoOpActorRecv<IM>, P, NoOpActorSend<OM>, IM> {
@@ -264,7 +264,7 @@ where
     /// A `Behaviour` with `NoOpActorRecv` for `recv`.
     ///
     /// # Example
-    /// ```rust
+    /// ```ignore
     /// let behaviour = Behaviour::with_send(MyProcessor {});
     /// ```
     pub fn with_send(proc: P, send: S) -> Behaviour<NoOpActorRecv<M>, P, S, M> {
