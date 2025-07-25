@@ -5,8 +5,8 @@ members = [
     "rpc_client",
     "job_manager",
     "generic_nctrl",
-    "generic_jctrl"
-]
+    "generic_jctrl",
+    "macros"]
 
 # exclude = ["examples"]
 resolver = "2"

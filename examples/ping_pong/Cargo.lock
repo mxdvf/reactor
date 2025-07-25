@@ -645,6 +645,7 @@ dependencies = [
  "env_logger",
  "lazy_static",
  "reactor-actor",
+ "reactor-macros",
  "serde_json",
  "tokio",
  "tokio-util",
@@ -747,6 +748,15 @@ dependencies = [
  "tracing",
  "tracing-shared",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "reactor-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

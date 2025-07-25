@@ -9,18 +9,16 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tokio_util::bytes::{Bytes, BytesMut};
 use reactor_actor::HasPriority;
+use reactor_macros::MsgWithDefaultPriority;
 
 // //////////////////////////////////////////////////////////////////////////////
 //                                    MSG
 // //////////////////////////////////////////////////////////////////////////////
-#[derive(Encode, Decode, Debug, Clone)]
+#[derive(Encode, Decode, Debug, Clone, MsgWithDefaultPriority)]
 pub enum PingPongMsg {
     Ping,
     Pong,
 }
-
-impl HasPriority for PingPongMsg{}
-impl Msg for PingPongMsg {}
 
 // //////////////////////////////////////////////////////////////////////////////
 //                                  Processor

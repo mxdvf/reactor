@@ -1302,6 +1302,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "reactor-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "reactor-node"
 version = "0.1.0"
 dependencies = [
