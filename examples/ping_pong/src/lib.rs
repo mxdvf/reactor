@@ -8,6 +8,7 @@ use reactor_actor::err::DecodeErr;
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio_util::bytes::{Bytes, BytesMut};
+use reactor_actor::HasPriority;
 
 // //////////////////////////////////////////////////////////////////////////////
 //                                    MSG
@@ -18,6 +19,7 @@ pub enum PingPongMsg {
     Pong,
 }
 
+impl HasPriority for PingPongMsg{}
 impl Msg for PingPongMsg {}
 
 // //////////////////////////////////////////////////////////////////////////////

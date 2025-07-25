@@ -16,3 +16,5 @@ tokio-util = { version = "0.7", features = ["full"] }
 reactor-actor = { path = "../../actor" }
 lazy_static = "1.5.0"
 env_logger = "0.11"
+
+[workspace]

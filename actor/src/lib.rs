@@ -3,25 +3,27 @@ use std::marker::PhantomData;
 use bincode::{Decode, Encode};
 use err::{ActorError, DecodeErr};
 use futures::future::join_all;
+use prio_channel::{PriorityChannelTx, priority_channel};
 use recv::rx;
 use send::tx;
 use tokio::{
-    sync::mpsc::{self},
+    sync::mpsc::{self, error::TryRecvError},
     task::JoinHandle,
 };
 use tokio_util::codec::{Decoder, Encoder};
 pub use tracing_shared::setup_shared_logger_ref;
-// use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub mod common;
 pub mod err;
 mod node_comm;
+mod prio_channel;
 mod recv;
 mod send;
 pub use node_comm::{Connection, ControlInst, ControlReq, NodeComm};
+pub use prio_channel::{HasPriority, MAX_PRIO};
 
 /// Messages that can flow between the actors.
-pub trait Msg: Send + Sync + std::fmt::Debug + 'static + Clone {}
+pub trait Msg: Send + Sync + std::fmt::Debug + HasPriority + 'static + Clone {}
 
 /// Addr of the actors
 pub type ActorAddrRef = &'static str;
@@ -29,6 +31,7 @@ pub type ActorAddr = String;
 
 #[derive(Encode, Decode, Debug, Clone)]
 pub struct EmptyMsg;
+impl HasPriority for EmptyMsg {}
 impl Msg for EmptyMsg {}
 
 /// Represents the action to take after receiving and decoding a message from a channel.
@@ -61,9 +64,19 @@ pub enum ChannelAction {
     CLOSE,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 enum R2PMsg<T> {
     Msg(T),
     Exit,
+}
+
+impl<T: HasPriority> HasPriority for R2PMsg<T> {
+    fn priority(&self) -> usize {
+        match self {
+            R2PMsg::Msg(t) => t.priority(),
+            R2PMsg::Exit => MAX_PRIO, // How to make it highest priority?!
+        }
+    }
 }
 
 /// The `ActorRecv` trait defines what action to take based on incoming message.
@@ -209,6 +222,7 @@ pub struct Behaviour<R, P, S, M> {
     proc: P,
     send: Option<S>,
     generators: Vec<Box<dyn Iterator<Item = M> + Send>>,
+    num_prios: Option<usize>,
 }
 
 impl<P, IM, OM> Behaviour<NoOpActorRecv<IM>, P, NoOpActorSend<OM>, EmptyMsg>
@@ -239,6 +253,7 @@ where
             proc,
             send: None,
             generators: Vec::new(),
+            num_prios: None,
         }
     }
 }
@@ -273,6 +288,7 @@ where
             proc,
             send: Some(send),
             generators: Vec::new(),
+            num_prios: None,
         }
     }
 }
@@ -288,6 +304,7 @@ where
             proc,
             send: None,
             generators: Vec::new(),
+            num_prios: None,
         }
     }
 }
@@ -304,11 +321,19 @@ where
             proc,
             send: Some(send),
             generators: Vec::new(),
+            num_prios: None,
         }
     }
 
     pub fn add_generator(&mut self, generator: Box<dyn Iterator<Item = I> + Send>) {
         self.generators.push(generator);
+    }
+    pub fn num_prios(&mut self, prios: usize) {
+        if prios == 0 {
+            self.num_prios = None;
+        } else {
+            self.num_prios = Some(prios)
+        }
     }
 }
 
@@ -339,8 +364,9 @@ where
     CD: Encoder<O> + Decoder<Item = I, Error = DecodeErr> + Send + Sync + Clone + 'static,
 {
     let my_addr = addr.to_string();
-    let (r2p_tx, mut r2p_rx) = mpsc::unbounded_channel::<R2PMsg<I>>();
+    // let (r2p_tx, mut r2p_rx) = mpsc::unbounded_channel::<R2PMsg<I>>();
     let (p2s_tx, p2s_rx) = mpsc::unbounded_channel::<O>();
+    let (r2p_tx, mut r2p_rx) = priority_channel::<R2PMsg<I>>(behaviour.num_prios.unwrap_or(1));
 
     let (controller_rx, controller_tx) = node_comm.split();
 
@@ -351,7 +377,10 @@ where
 
     let gen_handles: Vec<tokio::task::JoinHandle<_>> = generators
         .drain(..)
-        .map(|gene| tokio::spawn(generator(gene, r2p_tx.clone())))
+        .map(|gene| {
+            let tx = r2p_tx.clone();
+            tokio::spawn(generator(gene, tx))
+        })
         .collect();
 
     let rx_handle = tokio::spawn(rx(
@@ -366,15 +395,23 @@ where
     let proc_handle: JoinHandle<Result<(), ActorError>> =
         tokio::task::spawn_blocking(move || -> Result<(), ActorError> {
             tracing::info!("[ACTOR][{}] Processor Started", addr);
-            while let Some(i) = r2p_rx.blocking_recv() {
-                if let R2PMsg::Msg(msg) = i {
-                    let processed_messages = processor.process(msg);
-
-                    for message in processed_messages {
-                        p2s_tx.send(message).map_err(|_| ActorError::P2SErr)?;
+            loop {
+                match r2p_rx.try_recv() {
+                    Ok(R2PMsg::Msg(m)) => {
+                        let processed = processor.process(m);
+                        for o in processed {
+                            p2s_tx.send(o).map_err(|_| ActorError::P2SErr)?;
+                        }
                     }
-                } else {
-                    break;
+                    Ok(R2PMsg::Exit) => {
+                        break;
+                    }
+                    Err(TryRecvError::Empty) => {
+                        continue;
+                    }
+                    Err(TryRecvError::Disconnected) => {
+                        break;
+                    }
                 }
             }
             tracing::info!("[ACTOR][{}] Processor Ended", addr);
@@ -388,16 +425,13 @@ where
     Ok(())
 }
 
-async fn generator<G, M>(
-    generator: G,
-    p_tx: mpsc::UnboundedSender<R2PMsg<M>>,
-) -> Result<(), ActorError>
+async fn generator<G, M>(generator: G, p_tx: PriorityChannelTx<R2PMsg<M>>) -> Result<(), ActorError>
 where
     G: Iterator<Item = M>,
     M: Msg + 'static,
 {
     for m in generator {
-        p_tx.send(R2PMsg::Msg(m)).map_err(|_| ActorError::R2PErr)?;
+        p_tx.send(R2PMsg::Msg(m)).unwrap();
     }
     Ok(())
 }
