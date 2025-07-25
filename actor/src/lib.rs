@@ -226,7 +226,7 @@ where
                         break;
                     }
                     Err(TryRecvError::Empty) => {
-                        std::thread::sleep(std::time::Duration::from_millis(5));
+                        continue;
                     }
                     Err(TryRecvError::Disconnected) => {
                         break;

@@ -44,12 +44,11 @@ impl<T> PriorityChannelRx<T> {
         for rx in &mut self.receivers {
             match rx.try_recv() {
                 Ok(msg) => return Ok(msg),
-                Err(TryRecvError::Empty) => continue, // Keep checking other priorities
+                Err(TryRecvError::Empty) => continue,
                 Err(TryRecvError::Disconnected) => disconnected_count += 1,
             }
         }
 
-        // If all channels are disconnected, return None
         if disconnected_count == self.receivers.len() {
             Err(TryRecvError::Disconnected)
         } else {
