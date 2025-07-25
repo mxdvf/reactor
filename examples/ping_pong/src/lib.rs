@@ -2,8 +2,9 @@ pub use reactor_actor::setup_shared_logger_ref;
 
 use bincode::{Decode, Encode};
 use reactor_actor::{
-    ActorAddrRef, DecodeErr, Msg,
+    ActorAddrRef, Msg, Behaviour
 };
+use reactor_actor::err::DecodeErr;
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio_util::bytes::{Bytes, BytesMut};
@@ -117,7 +118,7 @@ impl tokio_util::codec::Encoder<PingPongMsg> for PingPongCodec {
 // //////////////////////////////////////////////////////////////////////////////
 
 pub async fn actor(node_comm: reactor_actor::NodeComm, my_addr: ActorAddrRef, other_addr: ActorAddrRef) {
-    let mut behaviour = reactor_actor::Behaviour::with_send(
+    let mut behaviour = Behaviour::with_send(
         Processor {},
         Sender {
             other_addr: vec![other_addr],

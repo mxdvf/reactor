@@ -10,7 +10,7 @@ use tokio::{
 use tokio_util::codec::{Encoder, FramedWrite};
 
 use crate::{
-    ActorAddrRef, ActorSend, Msg, SendBuffer,
+    ActorAddrRef, ActorSend, Msg,
     node_comm::{Connection, ControlReq},
 };
 
@@ -26,7 +26,7 @@ pub(crate) async fn tx<M, E, BS>(
     BS: ActorSend<OMsg = M>,
     E: Encoder<M> + 'static + Send + Clone,
 {
-    let mut addr_to_buff: HashMap<ActorAddrRef, SendBuffer<M>> = HashMap::new();
+    let mut addr_to_buff: HashMap<ActorAddrRef, mpsc::UnboundedSender<M>> = HashMap::new();
 
     let mut sub_senders = JoinSet::new();
     tracing::info!("[ACTOR][{}] Tx Started", my_addr);
