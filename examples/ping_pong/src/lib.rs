@@ -66,7 +66,7 @@ pub async fn actor(ctx: RuntimeCtx, other_addr: ActorAddrRef) {
     BehaviourBuilder::new(Processor {})
         .send(Sender::new(other_addr))
         .generator_if(ctx.addr == "pinger", || {
-            Box::new(vec![PingPongMsg::Ping].into_iter())
+            vec![PingPongMsg::Ping].into_iter()
         })
         .build()
         .run(ctx, BincodeCodec::default())
@@ -81,6 +81,5 @@ lazy_static::lazy_static! {
 #[unsafe(no_mangle)]
 pub fn pingpong(ctx: RuntimeCtx, mut payload: HashMap<String, serde_json::Value>) {
     let other = payload.remove("other").unwrap();
-    println!(";kajsfsahdfkjh");
     RUNTIME.spawn(actor(ctx, other.as_str().unwrap().to_string().leak()));
 }
