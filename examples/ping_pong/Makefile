@@ -12,7 +12,7 @@ kill_node:
 	- kill $(lsof -ti :3000)
 
 node: kill_node
-	reactor_nctrl --port 3000 target/release
+	reactor_nctrl --port 3000 target/debug
 	
 job:
 	reactor_jctrl ping_pong.toml

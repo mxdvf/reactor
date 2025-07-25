@@ -1,7 +1,7 @@
 //! One Node Controller task will be spawned on each physical nodes.
 use core::panic;
 use op_lib_manager::OpLibrary;
-use reactor_actor::{Connection, ControlInst, ControlReq, NodeComm};
+use reactor_actor::{Connection, ControlInst, ControlReq, NodeComm, RuntimeCtx};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::sync::{
@@ -28,7 +28,7 @@ use rpc::webserver;
 mod op_lib_manager;
 
 pub type NodeAddr = &'static str;
-pub type ActorSpawnCB = fn(ActorAddr, NodeComm, HashMap<String, Value>);
+pub type ActorSpawnCB = fn(RuntimeCtx, HashMap<String, serde_json::Value>);
 
 pub type SetupSharedLogger = fn(SharedLogger);
 
@@ -194,11 +194,7 @@ async fn handle_job_req(
                 shared_logger(logger);
                 let op: libloading::Symbol<ActorSpawnCB> = lib.get(op_name.as_bytes()).unwrap();
                 op(
-                    addr,
-                    NodeComm {
-                        controller_rx: control_rx,
-                        controller_tx: actor_contrl_tx.clone(),
-                    },
+                    RuntimeCtx::new(addr, NodeComm::new(control_rx, actor_contrl_tx.clone())),
                     payload,
                 );
                 resp_tx.send(Some(SpawnResult { port })).unwrap();

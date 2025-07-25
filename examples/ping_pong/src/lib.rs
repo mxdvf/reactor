@@ -81,5 +81,6 @@ lazy_static::lazy_static! {
 #[unsafe(no_mangle)]
 pub fn pingpong(ctx: RuntimeCtx, mut payload: HashMap<String, serde_json::Value>) {
     let other = payload.remove("other").unwrap();
+    println!(";kajsfsahdfkjh");
     RUNTIME.spawn(actor(ctx, other.as_str().unwrap().to_string().leak()));
 }

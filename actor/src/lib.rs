@@ -332,6 +332,12 @@ pub struct RuntimeCtx {
     pub node_comm: NodeComm,
 }
 
+impl RuntimeCtx {
+    pub fn new(addr: ActorAddrRef, node_comm: NodeComm) -> Self {
+        RuntimeCtx { addr, node_comm }
+    }
+}
+
 impl<R, P, S, IM, OM> Behaviour<R, P, S, IM>
 where
     IM: Msg,
