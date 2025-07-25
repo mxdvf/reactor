@@ -1305,9 +1305,11 @@ dependencies = [
 name = "reactor-macros"
 version = "0.1.0"
 dependencies = [
- "proc-macro2",
+ "bincode",
+ "bytes",
  "quote",
  "syn",
+ "tokio-util",
 ]
 
 [[package]]

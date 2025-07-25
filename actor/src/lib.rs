@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use bincode::{Decode, Encode};
-use err::{ActorError, DecodeErr};
+use err::ActorError;
 use futures::future::join_all;
 use prio_channel::{PriorityChannelTx, priority_channel};
 use recv::rx;
@@ -19,6 +19,8 @@ mod node_comm;
 mod prio_channel;
 mod recv;
 mod send;
+pub mod codec;
+
 pub use node_comm::{Connection, ControlInst, ControlReq, NodeComm};
 pub use prio_channel::{HasPriority, MAX_PRIO};
 
@@ -223,117 +225,211 @@ pub struct Behaviour<R, P, S, M> {
     proc: P,
     send: Option<S>,
     generators: Vec<Box<dyn Iterator<Item = M> + Send>>,
-    num_prios: Option<usize>,
+    num_prios: u8,
 }
 
-impl<P, IM, OM> Behaviour<NoOpActorRecv<IM>, P, NoOpActorSend<OM>, EmptyMsg>
-where
-    P: ActorProcess<IMsg = IM, OMsg = OM>,
-{
-    /// Constructs a [`Behaviour`] that only has processing logic, with no explicit
-    /// receive or send behavior.
-    ///
-    /// This is useful for actors that dont have a logic to handle received
-    /// messages and send message to a blackhole.
-    ///
-    /// # Arguments
-    ///
-    /// * `proc` - The processing logic implementing [`ActorProcess`].
-    ///
-    /// # Returns
-    ///
-    /// A `Behaviour` with `NoOpActorRecv` and `NoOpActorSend` as defaults for `recv` and `send`.
-    ///
-    /// # Example
-    /// ```ignore
-    /// let behaviour = Behaviour::with_proc_only(MyProcessor {});
-    /// ```
-    pub fn with_proc_only(proc: P) -> Behaviour<NoOpActorRecv<IM>, P, NoOpActorSend<OM>, IM> {
-        Behaviour {
+// impl<P, IM, OM> Behaviour<NoOpActorRecv<IM>, P, NoOpActorSend<OM>, EmptyMsg>
+// where
+//     P: ActorProcess<IMsg = IM, OMsg = OM>,
+// {
+//     /// Constructs a [`Behaviour`] that only has processing logic, with no explicit
+//     /// receive or send behavior.
+//     ///
+//     /// This is useful for actors that dont have a logic to handle received
+//     /// messages and send message to a blackhole.
+//     ///
+//     /// # Arguments
+//     ///
+//     /// * `proc` - The processing logic implementing [`ActorProcess`].
+//     ///
+//     /// # Returns
+//     ///
+//     /// A `Behaviour` with `NoOpActorRecv` and `NoOpActorSend` as defaults for `recv` and `send`.
+//     ///
+//     /// # Example
+//     /// ```ignore
+//     /// let behaviour = Behaviour::with_proc_only(MyProcessor {});
+//     /// ```
+//     pub fn with_proc_only(proc: P) -> Behaviour<NoOpActorRecv<IM>, P, NoOpActorSend<OM>, IM> {
+//         Behaviour {
+//             recv: None,
+//             proc,
+//             send: None,
+//             generators: Vec::new(),
+//             num_prios: None,
+//         }
+//     }
+// }
+//
+// impl<O, P, S, M> Behaviour<NoOpActorRecv<M>, P, S, EmptyMsg>
+// where
+//     P: ActorProcess<OMsg = O, IMsg = M>,
+//     S: ActorSend<OMsg = O>,
+// {
+//     /// Constructs a [`Behaviour`] that only has processing logic and a routing logic with no explicit
+//     /// receive behavior.
+//     ///
+//     /// This is useful for actors that dont have a logic to handle received
+//     /// messages.
+//     ///
+//     /// # Arguments
+//     ///
+//     /// * `proc` - The processing logic implementing [`ActorProcess`].
+//     /// * `send` - The routing logic implementing [`ActorSend`].
+//     ///
+//     /// # Returns
+//     ///
+//     /// A `Behaviour` with `NoOpActorRecv` for `recv`.
+//     ///
+//     /// # Example
+//     /// ```ignore
+//     /// let behaviour = Behaviour::with_send(MyProcessor {});
+//     /// ```
+//     pub fn with_send(proc: P, send: S) -> Behaviour<NoOpActorRecv<M>, P, S, M> {
+//         Behaviour {
+//             recv: None,
+//             proc,
+//             send: Some(send),
+//             generators: Vec::new(),
+//             num_prios: None,
+//         }
+//     }
+// }
+//
+// // impl<I, O, R, P> Behaviour<R, P, NoOpActorSend<O>, I>
+// // where
+// //     R: ActorRecv<IMsg = I>,
+// //     P: ActorProcess<IMsg = I, OMsg = O>,
+// // {
+// //     pub fn with_recv(proc: P, recv: R) -> Behaviour<R, P, NoOpActorSend<O>, I> {
+// //         Behaviour {
+// //             recv: Some(recv),
+// //             proc,
+// //             send: None,
+// //             generators: Vec::new(),
+// //             num_prios: None,
+// //         }
+// //     }
+// // }
+//
+// impl<I, O, R, P, S> Behaviour<R, P, S, I>
+// where
+//     R: ActorRecv<IMsg = I>,
+//     P: ActorProcess<IMsg = I, OMsg = O>,
+//     S: ActorSend<OMsg = O>,
+// {
+//
+//     pub fn with_recv(proc: P, recv: R) -> Behaviour<R, P, NoOpActorSend<O>, I> {
+//         Behaviour {
+//             recv: Some(recv),
+//             proc,
+//             send: None,
+//             generators: Vec::new(),
+//             num_prios: None,
+//         }
+//     }
+//
+//     pub fn with_send(proc: P, send: S) -> Behaviour<NoOpActorRecv<I>, P, S, I> {
+//         Behaviour {
+//             recv: None,
+//             proc,
+//             send: Some(send),
+//             generators: Vec::new(),
+//             num_prios: None,
+//         }
+//     }
+//     pub fn with_recv_send(proc: P, recv: R, send: S) -> Self {
+//         Behaviour {
+//             recv: Some(recv),
+//             proc,
+//             send: Some(send),
+//             generators: Vec::new(),
+//             num_prios: None,
+//         }
+//     }
+//
+//     pub fn add_generator(&mut self, generator: Box<dyn Iterator<Item = I> + Send>) {
+//         self.generators.push(generator);
+//     }
+//     pub fn num_prios(&mut self, prios: usize) {
+//         if prios == 0 {
+//             self.num_prios = None;
+//         } else {
+//             self.num_prios = Some(prios)
+//         }
+//     }
+// }
+pub struct BehaviourBuilder<R, P, S, IM, OM> {
+    recv: Option<R>,
+    proc: P,
+    send: Option<S>,
+    generators: Vec<Box<dyn Iterator<Item = IM> + Send>>,
+    num_prios: u8,
+    m: PhantomData<OM>,
+}
+
+impl<P, IM, OM> BehaviourBuilder<NoOpActorRecv<IM>, P, NoOpActorSend<OM>, IM, OM> {
+    pub fn new(proc: P) -> Self {
+        BehaviourBuilder {
             recv: None,
-            proc,
+            proc: proc,
             send: None,
-            generators: Vec::new(),
-            num_prios: None,
+            generators: vec![],
+            num_prios: 1,
+            m: PhantomData::default(),
         }
     }
 }
 
-impl<O, P, S, M> Behaviour<NoOpActorRecv<M>, P, S, EmptyMsg>
-where
-    P: ActorProcess<OMsg = O, IMsg = M>,
-    S: ActorSend<OMsg = O>,
-{
-    /// Constructs a [`Behaviour`] that only has processing logic and a routing logic with no explicit
-    /// receive behavior.
-    ///
-    /// This is useful for actors that dont have a logic to handle received
-    /// messages.
-    ///
-    /// # Arguments
-    ///
-    /// * `proc` - The processing logic implementing [`ActorProcess`].
-    /// * `send` - The routing logic implementing [`ActorSend`].
-    ///
-    /// # Returns
-    ///
-    /// A `Behaviour` with `NoOpActorRecv` for `recv`.
-    ///
-    /// # Example
-    /// ```ignore
-    /// let behaviour = Behaviour::with_send(MyProcessor {});
-    /// ```
-    pub fn with_send(proc: P, send: S) -> Behaviour<NoOpActorRecv<M>, P, S, M> {
-        Behaviour {
-            recv: None,
-            proc,
-            send: Some(send),
-            generators: Vec::new(),
-            num_prios: None,
-        }
-    }
-}
 
-impl<I, O, R, P> Behaviour<R, P, NoOpActorSend<O>, I>
-where
-    R: ActorRecv<IMsg = I>,
-    P: ActorProcess<IMsg = I, OMsg = O>,
-{
-    pub fn with_recv(proc: P, recv: R) -> Behaviour<R, P, NoOpActorSend<O>, I> {
-        Behaviour {
+impl<R, P, S, IM, OM> BehaviourBuilder<R, P, S, IM, OM> {
+    pub fn recv<R1>(self, recv: R1) -> BehaviourBuilder<R1, P, S, IM, OM>
+    where
+        R1: ActorRecv<IMsg=IM>
+    {
+        BehaviourBuilder {
             recv: Some(recv),
-            proc,
-            send: None,
-            generators: Vec::new(),
-            num_prios: None,
+            proc: self.proc,
+            send: self.send,
+            generators: self.generators,
+            num_prios: self.num_prios,
+            m: self.m
         }
     }
-}
-
-impl<I, O, R, P, S> Behaviour<R, P, S, I>
-where
-    R: ActorRecv<IMsg = I>,
-    P: ActorProcess<IMsg = I, OMsg = O>,
-    S: ActorSend<OMsg = O>,
-{
-    pub fn with_recv_send(proc: P, recv: R, send: S) -> Self {
-        Behaviour {
-            recv: Some(recv),
-            proc,
+    pub fn send<S1>(self, send: S1) -> BehaviourBuilder<R, P, S1, IM, OM>
+    where
+        S1: ActorSend<OMsg=OM>
+    {
+        BehaviourBuilder {
+            recv: self.recv,
+            proc: self.proc,
             send: Some(send),
-            generators: Vec::new(),
-            num_prios: None,
+            generators: self.generators,
+            num_prios: self.num_prios,
+            m: self.m
         }
     }
 
-    pub fn add_generator(&mut self, generator: Box<dyn Iterator<Item = I> + Send>) {
-        self.generators.push(generator);
+    pub fn generator<I>(mut self, generator: I) -> BehaviourBuilder<R, P, S, IM, OM>
+    where
+        I: Iterator<Item = IM> + Send + 'static,
+    {
+        self.generators.push(Box::new(generator));
+        self
     }
-    pub fn num_prios(&mut self, prios: usize) {
-        if prios == 0 {
-            self.num_prios = None;
-        } else {
-            self.num_prios = Some(prios)
+    
+    pub fn num_prios(mut self, num: u8) -> BehaviourBuilder<R, P, S, IM, OM> {
+        self.num_prios = num;
+        self
+    }
+
+    pub fn build(self) -> Behaviour<R, P, S, IM> {
+        Behaviour {
+            recv: self.recv,
+            proc: self.proc,
+            send: self.send,
+            generators: self.generators,
+            num_prios: self.num_prios,
         }
     }
 }
@@ -362,13 +458,13 @@ where
     R: ActorRecv<IMsg = I>,
     P: ActorProcess<IMsg = I, OMsg = O>,
     S: ActorSend<OMsg = O>,
-    CD: Encoder<O> + Decoder<Item = I, Error = DecodeErr> + Send + Sync + Clone + 'static,
+    CD: Encoder<O> + Decoder<Item = I, Error = std::io::Error> + Send + Sync + Clone + 'static,
 {
     let my_addr = addr.to_string();
     // let (r2p_tx, mut r2p_rx) = mpsc::unbounded_channel::<R2PMsg<I>>();
     let (p2s_tx, p2s_rx) = mpsc::unbounded_channel::<O>();
     let (r2p_tx, mut r2p_rx) =
-        priority_channel::<R2PMsg<I>>(behaviour.num_prios.unwrap_or(1), CHANNEL_SIZE);
+        priority_channel::<R2PMsg<I>>(behaviour.num_prios, CHANNEL_SIZE);
 
     let (controller_rx, controller_tx) = node_comm.split();
 

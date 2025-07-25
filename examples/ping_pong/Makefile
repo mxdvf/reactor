@@ -1,11 +1,11 @@
-install: install_node install_jobc build_ops
+install: install_node install_jobc build
 install_node:
 	cargo install --debug --path ../../generic_nctrl/
 
 install_jobc:
 	cargo install --debug --path ../../generic_jctrl/
 
-build_ops:
+build:
 	cargo build
 
 kill_node:

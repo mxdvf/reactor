@@ -58,7 +58,7 @@ impl<T> PriorityChannelRx<T> {
 }
 
 pub fn priority_channel<T: HasPriority>(
-    num_prios: usize,
+    num_prios: u8,
     channel_size: usize,
 ) -> (PriorityChannelTx<T>, PriorityChannelRx<T>) {
     let mut senders = Vec::new();

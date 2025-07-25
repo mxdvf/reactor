@@ -1,14 +1,11 @@
 pub use reactor_actor::setup_shared_logger_ref;
 
 use bincode::{Decode, Encode};
-use reactor_actor::{
-    ActorAddrRef, Msg, Behaviour
-};
-use reactor_actor::err::DecodeErr;
+use reactor_actor::{ActorAddrRef, Msg, BehaviourBuilder};
 use std::collections::HashMap;
 use std::time::Duration;
-use tokio_util::bytes::{Bytes, BytesMut};
 use reactor_actor::HasPriority;
+use reactor_actor::codec::LengthDelimitedCodec;
 use reactor_macros::MsgWithDefaultPriority;
 
 // //////////////////////////////////////////////////////////////////////////////
@@ -53,82 +50,21 @@ impl reactor_actor::ActorSend for Sender {
 }
 
 // //////////////////////////////////////////////////////////////////////////////
-//                                  CODEC
-// //////////////////////////////////////////////////////////////////////////////
-
-#[derive(Clone)]
-pub struct PingPongCodec {
-    config: bincode::config::Configuration,
-    length_codec: tokio_util::codec::LengthDelimitedCodec,
-}
-impl PingPongCodec {
-    pub fn new() -> Self {
-        PingPongCodec {
-            config: bincode::config::standard(),
-            length_codec: tokio_util::codec::LengthDelimitedCodec::builder()
-                .length_field_length(4)
-                .max_frame_length(u32::MAX as usize)
-                .new_codec(),
-        }
-    }
-}
-impl Default for PingPongCodec {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl tokio_util::codec::Decoder for PingPongCodec {
-    type Item = PingPongMsg;
-    type Error = DecodeErr;
-
-    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        let frame = match self.length_codec.decode(src).map_err(|_| DecodeErr)? {
-            Some(frame) => frame,
-            None => return Ok(None),
-        };
-        let (message, _) =
-            bincode::decode_from_slice(&frame, self.config).map_err(|_| DecodeErr)?;
-
-        Ok(Some(message))
-    }
-}
-impl tokio_util::codec::Encoder<PingPongMsg> for PingPongCodec {
-    type Error = std::io::Error;
-
-    fn encode(&mut self, item: PingPongMsg, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        let encoded_data = bincode::encode_to_vec(&item, self.config).map_err(|_| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, "Failed to encode data")
-        })?;
-        self.length_codec
-            .encode(Bytes::from(encoded_data), dst)
-            .map_err(|_| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Couldn't encode length-delimited data",
-                )
-            })?;
-
-        Ok(())
-    }
-}
-
-// //////////////////////////////////////////////////////////////////////////////
 //                                ACTORS
 // //////////////////////////////////////////////////////////////////////////////
 
 pub async fn actor(node_comm: reactor_actor::NodeComm, my_addr: ActorAddrRef, other_addr: ActorAddrRef) {
-    let mut behaviour = Behaviour::with_send(
-        Processor {},
-        Sender {
-            other_addr: vec![other_addr],
-        },
-    );
+    let mut bb = BehaviourBuilder::new(Processor{}).send(
+            Sender {
+                other_addr: vec![other_addr],
+            }
+        );
     if my_addr == "pinger" {
-        behaviour.add_generator(Box::new(vec![PingPongMsg::Ping].into_iter()));
+        bb = bb.generator(Box::new(vec![PingPongMsg::Ping].into_iter()));
     }
+    let behaviour = bb.build();
 
-    reactor_actor::actor(my_addr, behaviour, PingPongCodec::new(), node_comm)
+    reactor_actor::actor(my_addr, behaviour, LengthDelimitedCodec::default(), node_comm)
         .await
         .unwrap();
 }
