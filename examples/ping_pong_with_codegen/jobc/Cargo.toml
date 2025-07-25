@@ -9,5 +9,4 @@ tokio = { version = "1", features = ["full", "tracing"] }
 reactor-jobm = { path = "../../../job_manager" }
 askama = { version = "0.14.0" }
 clap = { version = "4", features = ["derive"] }
-toml = "0.8.23"
-
+serde_json = "1.0.141"

@@ -12,7 +12,7 @@ use reactor_jobm::JobController;
 use reactor_jobm::placement::{LibInfo, LogicalOp, ManualPlacementManager, PhysicalOp};
 use std::collections::HashMap;
 use std::time::Duration;
-use toml::Value;
+use serde_json::Value;
 
 #[tokio::main]
 async fn main() {
