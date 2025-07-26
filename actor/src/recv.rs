@@ -20,7 +20,7 @@ use crate::{
     ActorAddrRef, ActorRecv, ChannelAction, Msg, R2PMsg,
     err::{ActorError, RecieverErr},
     node_comm::{ControlInst, LocalChannelRx},
-    prio_channel::PriorityChannelTx,
+    reactor_channel::ReactorChannelTx,
 };
 
 /// Spawns tasks to receive messages from incoming network or local control channels,
@@ -63,7 +63,7 @@ use crate::{
 pub(crate) async fn rx<M, AR, D>(
     my_addr: ActorAddrRef,
     reciever: Option<AR>,
-    p_tx: PriorityChannelTx<R2PMsg<M>>,
+    p_tx: ReactorChannelTx<R2PMsg<M>>,
     decoder: D,
     mut controller_rx: mpsc::Receiver<ControlInst>,
 ) -> Result<(), ActorError>
@@ -118,7 +118,7 @@ async fn tcp_recv<D, M, AR>(
     port: u16,
     cancel_token: CancellationToken,
     decoder: D,
-    p_tx: PriorityChannelTx<R2PMsg<M>>,
+    p_tx: ReactorChannelTx<R2PMsg<M>>,
     cstate: Option<Arc<Mutex<AR>>>,
 ) -> Result<(), ActorError>
 where
@@ -189,7 +189,7 @@ async fn recv_remote_handshake(rx: &mut OwnedReadHalf) -> String {
 
 async fn remote_parent_recv_subtask<M, AR, D, RX>(
     parent_addr: String,
-    row_q: PriorityChannelTx<R2PMsg<M>>,
+    row_q: ReactorChannelTx<R2PMsg<M>>,
     cstate: Option<Arc<Mutex<AR>>>,
     mut framed_reader: FramedRead<RX, D>,
 ) where
@@ -230,7 +230,7 @@ async fn remote_parent_recv_subtask<M, AR, D, RX>(
 
 async fn local_parent_recv_subtask<M, AR>(
     parent_addr: String,
-    row_q: PriorityChannelTx<R2PMsg<M>>,
+    row_q: ReactorChannelTx<R2PMsg<M>>,
     after_recv: Option<Arc<Mutex<AR>>>,
     mut local_rx: LocalChannelRx,
 ) where
