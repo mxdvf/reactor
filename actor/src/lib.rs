@@ -72,6 +72,8 @@ enum R2PMsg<T> {
     Exit,
     #[allow(dead_code)]
     AddPrio(mpsc::Receiver<R2PMsg<T>>),
+    #[allow(dead_code)]
+    RemoveLowPrio,
 }
 
 impl<T: Clone> Clone for R2PMsg<T> {
@@ -99,6 +101,7 @@ impl<T: HasPriority> HasPriority for R2PMsg<T> {
             R2PMsg::Msg(t) => t.priority(),
             R2PMsg::Exit => MAX_PRIO,
             R2PMsg::AddPrio(_) => MAX_PRIO,
+            R2PMsg::RemoveLowPrio => MAX_PRIO,
         }
     }
 }
@@ -418,6 +421,9 @@ where
                         }
                         Some(R2PMsg::AddPrio(new_rx)) => {
                             r2p_rx = r2p_rx.add_prio(new_rx);
+                        }
+                        Some(R2PMsg::RemoveLowPrio) => {
+                            r2p_rx = r2p_rx.remove_prio();
                         }
                         Some(R2PMsg::Exit) => {
                             break;

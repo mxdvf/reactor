@@ -13,22 +13,6 @@ pub enum ReactorChannelTx<T> {
     MultiChannel(PriorityChannelTx<T>),
 }
 
-impl<T> ReactorChannelTx<T> {
-    #[allow(unused)]
-    pub fn reduce_prio(&mut self) {
-        match self {
-            ReactorChannelTx::SingleChannel(_) => panic!("Single Channel"),
-            ReactorChannelTx::MultiChannel(priority_channel_tx) => {
-                priority_channel_tx.remove_prio();
-                if priority_channel_tx.curr_prios() == 1 {
-                    *self =
-                        ReactorChannelTx::SingleChannel(priority_channel_tx.senders.pop().unwrap())
-                }
-            }
-        }
-    }
-}
-
 impl<T: HasPriority> ReactorChannelTx<T> {
     pub(crate) async fn send(&self, msg: T) -> Result<(), SendError<T>> {
         match self {
@@ -40,7 +24,7 @@ impl<T: HasPriority> ReactorChannelTx<T> {
     }
 }
 
-impl<T> ReactorChannelTx<R2PMsg<T>> {
+impl<T: HasPriority> ReactorChannelTx<R2PMsg<T>> {
     #[allow(dead_code)]
     pub async fn add_prio(self, channel_size: usize) -> ReactorChannelTx<R2PMsg<T>> {
         match self {
@@ -56,6 +40,22 @@ impl<T> ReactorChannelTx<R2PMsg<T>> {
                 new_tx.send(R2PMsg::AddPrio(new_rx)).await.unwrap();
                 priority_channel_tx.senders.push(new_tx);
                 ReactorChannelTx::MultiChannel(priority_channel_tx)
+            }
+        }
+    }
+    #[allow(dead_code)]
+    pub fn remove_prio(&mut self) {
+        match self {
+            ReactorChannelTx::SingleChannel(_) => panic!("Single Channel"),
+            ReactorChannelTx::MultiChannel(priority_channel_tx) => {
+                priority_channel_tx.remove_prio();
+                priority_channel_tx
+                    .send_blocking(R2PMsg::RemoveLowPrio)
+                    .unwrap();
+                if priority_channel_tx.curr_prios() == 1 {
+                    *self =
+                        ReactorChannelTx::SingleChannel(priority_channel_tx.senders.pop().unwrap())
+                }
             }
         }
     }
@@ -95,6 +95,19 @@ impl<T> ReactorChannelRx<T> {
             ReactorChannelRx::MultiChannel(mut priority_channel_rx) => {
                 priority_channel_rx.add_prio(new_rx);
                 ReactorChannelRx::MultiChannel(priority_channel_rx)
+            }
+        }
+    }
+    pub(crate) fn remove_prio(self) -> Self {
+        match self {
+            ReactorChannelRx::SingleChannel(_) => panic!("Single Channel"),
+            ReactorChannelRx::MultiChannel(mut priority_channel_rx) => {
+                priority_channel_rx.remove_prio();
+                if priority_channel_rx.curr_prios() == 1 {
+                    ReactorChannelRx::SingleChannel(priority_channel_rx.receivers.pop().unwrap())
+                } else {
+                    ReactorChannelRx::MultiChannel(priority_channel_rx)
+                }
             }
         }
     }
@@ -153,6 +166,14 @@ impl<T: HasPriority> PriorityChannelTx<T> {
             Err(SendError(msg))
         }
     }
+    pub fn send_blocking(&self, msg: T) -> Result<(), SendError<T>> {
+        let idx = msg.priority();
+        if let Some(tx) = self.senders.get(idx) {
+            (*tx).blocking_send(msg)
+        } else {
+            Err(SendError(msg))
+        }
+    }
 }
 
 impl<T> PriorityChannelTx<T> {
@@ -185,6 +206,14 @@ impl<T> PriorityChannelRx<T> {
 
     pub fn add_prio(&mut self, new_rx: mpsc::Receiver<T>) {
         self.receivers.push(new_rx);
+    }
+
+    fn remove_prio(&mut self) {
+        self.receivers.pop();
+    }
+
+    fn curr_prios(&self) -> u8 {
+        self.receivers.len() as u8
     }
 }
 
