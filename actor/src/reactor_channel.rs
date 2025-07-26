@@ -1,9 +1,131 @@
 use tokio::sync::mpsc::{
-    self,
+    self, Receiver, Sender,
     error::{SendError, TryRecvError},
 };
 
+use crate::R2PMsg;
+
 pub static MAX_PRIO: usize = 0;
+
+#[derive(Clone)]
+pub enum ReactorChannelTx<T> {
+    SingleChannel(Sender<T>),
+    MultiChannel(PriorityChannelTx<T>),
+}
+
+impl<T> ReactorChannelTx<T> {
+    #[allow(unused)]
+    pub fn reduce_prio(&mut self) {
+        match self {
+            ReactorChannelTx::SingleChannel(_) => panic!("Single Channel"),
+            ReactorChannelTx::MultiChannel(priority_channel_tx) => {
+                priority_channel_tx.remove_prio();
+                if priority_channel_tx.curr_prios() == 1 {
+                    *self =
+                        ReactorChannelTx::SingleChannel(priority_channel_tx.senders.pop().unwrap())
+                }
+            }
+        }
+    }
+}
+
+impl<T: HasPriority> ReactorChannelTx<T> {
+    pub(crate) async fn send(&self, msg: T) -> Result<(), SendError<T>> {
+        match self {
+            ReactorChannelTx::SingleChannel(tx) => tx.send(msg).await,
+            ReactorChannelTx::MultiChannel(priority_channel_rx) => {
+                priority_channel_rx.send(msg).await
+            }
+        }
+    }
+}
+
+impl<T> ReactorChannelTx<R2PMsg<T>> {
+    #[allow(dead_code)]
+    pub async fn add_prio(self, channel_size: usize) -> ReactorChannelTx<R2PMsg<T>> {
+        match self {
+            ReactorChannelTx::SingleChannel(tx) => {
+                let (new_tx, new_rx) = mpsc::channel(channel_size);
+                new_tx.send(R2PMsg::AddPrio(new_rx)).await.unwrap();
+                ReactorChannelTx::MultiChannel(PriorityChannelTx {
+                    senders: vec![tx, new_tx],
+                })
+            }
+            ReactorChannelTx::MultiChannel(mut priority_channel_tx) => {
+                let (new_tx, new_rx) = mpsc::channel(channel_size);
+                new_tx.send(R2PMsg::AddPrio(new_rx)).await.unwrap();
+                priority_channel_tx.senders.push(new_tx);
+                ReactorChannelTx::MultiChannel(priority_channel_tx)
+            }
+        }
+    }
+}
+
+pub enum ReactorChannelRx<T> {
+    SingleChannel(Receiver<T>),
+    MultiChannel(PriorityChannelRx<T>),
+}
+impl<T> ReactorChannelRx<T> {
+    pub fn recv(&mut self) -> Option<T> {
+        match self {
+            ReactorChannelRx::SingleChannel(receiver) => receiver.blocking_recv(),
+            ReactorChannelRx::MultiChannel(priority_channel_rx) => loop {
+                match priority_channel_rx.try_recv() {
+                    Ok(msg) => {
+                        return Some(msg);
+                    }
+                    Err(TryRecvError::Empty) => {
+                        continue;
+                    }
+                    Err(TryRecvError::Disconnected) => {
+                        return None;
+                    }
+                }
+            },
+        }
+    }
+
+    pub(crate) fn add_prio(self, new_rx: Receiver<T>) -> Self {
+        match self {
+            ReactorChannelRx::SingleChannel(receiver) => {
+                ReactorChannelRx::MultiChannel(PriorityChannelRx {
+                    receivers: vec![receiver, new_rx],
+                })
+            }
+            ReactorChannelRx::MultiChannel(mut priority_channel_rx) => {
+                priority_channel_rx.add_prio(new_rx);
+                ReactorChannelRx::MultiChannel(priority_channel_rx)
+            }
+        }
+    }
+}
+
+pub fn reactor_channel<T: HasPriority>(
+    num_prios: u8,
+    channel_size: usize,
+) -> (ReactorChannelTx<T>, ReactorChannelRx<T>) {
+    if num_prios == 1 {
+        let (tx, rx) = mpsc::channel::<T>(channel_size);
+        (
+            ReactorChannelTx::SingleChannel(tx),
+            ReactorChannelRx::SingleChannel(rx),
+        )
+    } else {
+        let mut senders = Vec::new();
+        let mut receivers = Vec::new();
+
+        for _ in 0..num_prios {
+            let (tx, rx) = mpsc::channel::<T>(channel_size);
+            senders.push(tx);
+            receivers.push(rx);
+        }
+
+        (
+            ReactorChannelTx::MultiChannel(PriorityChannelTx { senders }),
+            ReactorChannelRx::MultiChannel(PriorityChannelRx { receivers }),
+        )
+    }
+}
 
 /// Messages that can flow between the actors.
 //pub trait Msg: Send + std::fmt::Debug {}
@@ -14,7 +136,7 @@ pub trait HasPriority {
 }
 
 #[derive(Clone)]
-pub struct PriorityChannelTx<T: HasPriority> {
+pub struct PriorityChannelTx<T> {
     senders: Vec<mpsc::Sender<T>>,
 }
 
@@ -31,9 +153,14 @@ impl<T: HasPriority> PriorityChannelTx<T> {
             Err(SendError(msg))
         }
     }
-    #[allow(unused)]
+}
+
+impl<T> PriorityChannelTx<T> {
     pub fn remove_prio(&mut self) {
         self.senders.pop();
+    }
+    pub fn curr_prios(&self) -> u8 {
+        self.senders.len() as u8
     }
 }
 
@@ -55,25 +182,10 @@ impl<T> PriorityChannelRx<T> {
             Err(TryRecvError::Empty)
         }
     }
-}
 
-pub fn priority_channel<T: HasPriority>(
-    num_prios: u8,
-    channel_size: usize,
-) -> (PriorityChannelTx<T>, PriorityChannelRx<T>) {
-    let mut senders = Vec::new();
-    let mut receivers = Vec::new();
-
-    for _ in 0..num_prios {
-        let (tx, rx) = mpsc::channel::<T>(channel_size);
-        senders.push(tx);
-        receivers.push(rx);
+    pub fn add_prio(&mut self, new_rx: mpsc::Receiver<T>) {
+        self.receivers.push(new_rx);
     }
-
-    (
-        PriorityChannelTx { senders },
-        PriorityChannelRx { receivers },
-    )
 }
 
 #[cfg(test)]
@@ -81,6 +193,24 @@ mod tests {
     use crate::R2PMsg;
 
     use super::*;
+    fn priority_channel<T: HasPriority>(
+        num_prios: u8,
+        channel_size: usize,
+    ) -> (PriorityChannelTx<T>, PriorityChannelRx<T>) {
+        let mut senders = Vec::new();
+        let mut receivers = Vec::new();
+
+        for _ in 0..num_prios {
+            let (tx, rx) = mpsc::channel::<T>(channel_size);
+            senders.push(tx);
+            receivers.push(rx);
+        }
+
+        (
+            PriorityChannelTx { senders },
+            PriorityChannelRx { receivers },
+        )
+    }
 
     // Dummy message type
     #[derive(Debug, Clone, PartialEq)]
