@@ -34,6 +34,15 @@ pub struct NodeComm {
 }
 
 impl NodeComm {
+    pub fn new(
+        controller_rx: mpsc::Receiver<ControlInst>,
+        controller_tx: mpsc::Sender<ControlReq>,
+    ) -> Self {
+        NodeComm {
+            controller_rx,
+            controller_tx,
+        }
+    }
     pub fn split(self) -> (mpsc::Receiver<ControlInst>, mpsc::Sender<ControlReq>) {
         (self.controller_rx, self.controller_tx)
     }

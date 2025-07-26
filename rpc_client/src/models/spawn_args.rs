@@ -20,7 +20,7 @@ pub struct SpawnArgs {
     #[serde(rename = "operator_name")]
     pub operator_name: String,
     #[serde(rename = "payload")]
-    pub payload: std::collections::HashMap<String, String>,
+    pub payload: std::collections::HashMap<String, serde_json::Value>,
 }
 
 impl SpawnArgs {
@@ -28,7 +28,7 @@ impl SpawnArgs {
         actor_name: String,
         lib_name: String,
         operator_name: String,
-        payload: std::collections::HashMap<String, String>,
+        payload: std::collections::HashMap<String, serde_json::Value>,
     ) -> SpawnArgs {
         SpawnArgs {
             actor_name,

@@ -8,4 +8,4 @@ gen_http_client:
 	docker run --rm --network=host -v $PWD:/local -u $(id -u):$(id -g)  \
 		openapitools/openapi-generator-cli generate -i http://host.docker.internal:3000/api-doc/openapi.json \
 		-g rust -o /local/rpc_client/ --additional-properties=packageName=reactor-client
-	kill $SERVER_PID
+	kill ${SERVER_PID}

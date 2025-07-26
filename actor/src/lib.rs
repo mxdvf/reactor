@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use bincode::{Decode, Encode};
-use err::{ActorError, DecodeErr};
+use err::ActorError;
 use futures::future::join_all;
 use prio_channel::{PriorityChannelTx, priority_channel};
 use recv::rx;
@@ -13,12 +13,15 @@ use tokio::{
 use tokio_util::codec::{Decoder, Encoder};
 pub use tracing_shared::setup_shared_logger_ref;
 
+pub mod codec;
 pub mod common;
 pub mod err;
 mod node_comm;
 mod prio_channel;
 mod recv;
 mod send;
+use reactor_macros::{DefaultPrio, Msg as DeriveMsg};
+
 pub use node_comm::{Connection, ControlInst, ControlReq, NodeComm};
 pub use prio_channel::{HasPriority, MAX_PRIO};
 
@@ -30,10 +33,8 @@ pub trait Msg: Send + Sync + std::fmt::Debug + HasPriority + 'static + Clone {}
 pub type ActorAddrRef = &'static str;
 pub type ActorAddr = String;
 
-#[derive(Encode, Decode, Debug, Clone)]
+#[derive(Encode, Decode, Debug, Clone, DefaultPrio, DeriveMsg)]
 pub struct EmptyMsg;
-impl HasPriority for EmptyMsg {}
-impl Msg for EmptyMsg {}
 
 /// Represents the action to take after receiving and decoding a message from a channel.
 ///
@@ -223,117 +224,93 @@ pub struct Behaviour<R, P, S, M> {
     proc: P,
     send: Option<S>,
     generators: Vec<Box<dyn Iterator<Item = M> + Send>>,
-    num_prios: Option<usize>,
+    num_prios: u8,
 }
 
-impl<P, IM, OM> Behaviour<NoOpActorRecv<IM>, P, NoOpActorSend<OM>, EmptyMsg>
-where
-    P: ActorProcess<IMsg = IM, OMsg = OM>,
-{
-    /// Constructs a [`Behaviour`] that only has processing logic, with no explicit
-    /// receive or send behavior.
-    ///
-    /// This is useful for actors that dont have a logic to handle received
-    /// messages and send message to a blackhole.
-    ///
-    /// # Arguments
-    ///
-    /// * `proc` - The processing logic implementing [`ActorProcess`].
-    ///
-    /// # Returns
-    ///
-    /// A `Behaviour` with `NoOpActorRecv` and `NoOpActorSend` as defaults for `recv` and `send`.
-    ///
-    /// # Example
-    /// ```ignore
-    /// let behaviour = Behaviour::with_proc_only(MyProcessor {});
-    /// ```
-    pub fn with_proc_only(proc: P) -> Behaviour<NoOpActorRecv<IM>, P, NoOpActorSend<OM>, IM> {
-        Behaviour {
+pub struct BehaviourBuilder<R, P, S, IM, OM> {
+    recv: Option<R>,
+    proc: P,
+    send: Option<S>,
+    generators: Vec<Box<dyn Iterator<Item = IM> + Send>>,
+    num_prios: u8,
+    m: PhantomData<OM>,
+}
+
+impl<P, IM, OM> BehaviourBuilder<NoOpActorRecv<IM>, P, NoOpActorSend<OM>, IM, OM> {
+    pub fn new(proc: P) -> Self {
+        BehaviourBuilder {
             recv: None,
             proc,
             send: None,
-            generators: Vec::new(),
-            num_prios: None,
+            generators: vec![],
+            num_prios: 1,
+            m: PhantomData,
         }
     }
 }
 
-impl<O, P, S, M> Behaviour<NoOpActorRecv<M>, P, S, EmptyMsg>
-where
-    P: ActorProcess<OMsg = O, IMsg = M>,
-    S: ActorSend<OMsg = O>,
-{
-    /// Constructs a [`Behaviour`] that only has processing logic and a routing logic with no explicit
-    /// receive behavior.
-    ///
-    /// This is useful for actors that dont have a logic to handle received
-    /// messages.
-    ///
-    /// # Arguments
-    ///
-    /// * `proc` - The processing logic implementing [`ActorProcess`].
-    /// * `send` - The routing logic implementing [`ActorSend`].
-    ///
-    /// # Returns
-    ///
-    /// A `Behaviour` with `NoOpActorRecv` for `recv`.
-    ///
-    /// # Example
-    /// ```ignore
-    /// let behaviour = Behaviour::with_send(MyProcessor {});
-    /// ```
-    pub fn with_send(proc: P, send: S) -> Behaviour<NoOpActorRecv<M>, P, S, M> {
-        Behaviour {
-            recv: None,
-            proc,
-            send: Some(send),
-            generators: Vec::new(),
-            num_prios: None,
-        }
-    }
-}
-
-impl<I, O, R, P> Behaviour<R, P, NoOpActorSend<O>, I>
-where
-    R: ActorRecv<IMsg = I>,
-    P: ActorProcess<IMsg = I, OMsg = O>,
-{
-    pub fn with_recv(proc: P, recv: R) -> Behaviour<R, P, NoOpActorSend<O>, I> {
-        Behaviour {
+impl<R, P, S, IM, OM> BehaviourBuilder<R, P, S, IM, OM> {
+    pub fn recv<R1>(self, recv: R1) -> BehaviourBuilder<R1, P, S, IM, OM>
+    where
+        R1: ActorRecv<IMsg = IM>,
+    {
+        BehaviourBuilder {
             recv: Some(recv),
-            proc,
-            send: None,
-            generators: Vec::new(),
-            num_prios: None,
+            proc: self.proc,
+            send: self.send,
+            generators: self.generators,
+            num_prios: self.num_prios,
+            m: self.m,
         }
     }
-}
-
-impl<I, O, R, P, S> Behaviour<R, P, S, I>
-where
-    R: ActorRecv<IMsg = I>,
-    P: ActorProcess<IMsg = I, OMsg = O>,
-    S: ActorSend<OMsg = O>,
-{
-    pub fn with_recv_send(proc: P, recv: R, send: S) -> Self {
-        Behaviour {
-            recv: Some(recv),
-            proc,
+    pub fn send<S1>(self, send: S1) -> BehaviourBuilder<R, P, S1, IM, OM>
+    where
+        S1: ActorSend<OMsg = OM>,
+    {
+        BehaviourBuilder {
+            recv: self.recv,
+            proc: self.proc,
             send: Some(send),
-            generators: Vec::new(),
-            num_prios: None,
+            generators: self.generators,
+            num_prios: self.num_prios,
+            m: self.m,
         }
     }
 
-    pub fn add_generator(&mut self, generator: Box<dyn Iterator<Item = I> + Send>) {
-        self.generators.push(generator);
+    pub fn generator<I>(mut self, generator: I) -> BehaviourBuilder<R, P, S, IM, OM>
+    where
+        I: Iterator<Item = IM> + Send + 'static,
+    {
+        self.generators.push(Box::new(generator));
+        self
     }
-    pub fn num_prios(&mut self, prios: usize) {
-        if prios == 0 {
-            self.num_prios = None;
-        } else {
-            self.num_prios = Some(prios)
+
+    pub fn generator_if<I>(
+        mut self,
+        condition: bool,
+        generator_creator: fn() -> I,
+    ) -> BehaviourBuilder<R, P, S, IM, OM>
+    where
+        I: Iterator<Item = IM> + Send + 'static,
+    {
+        if condition {
+            self.generators.push(Box::new(generator_creator()));
+        }
+        self
+    }
+
+    pub fn num_prios(mut self, num: u8) -> BehaviourBuilder<R, P, S, IM, OM> {
+        self.num_prios = num;
+        self
+    }
+
+    pub fn build(self) -> Behaviour<R, P, S, IM> {
+        Behaviour {
+            recv: self.recv,
+            proc: self.proc,
+            send: self.send,
+            generators: self.generators,
+            num_prios: self.num_prios,
         }
     }
 }
@@ -350,81 +327,94 @@ impl<R, P, S, M> Behaviour<R, P, S, M> {
     }
 }
 
-pub async fn actor<I, O, R, P, S, CD>(
-    addr: ActorAddrRef,
-    mut behaviour: Behaviour<R, P, S, I>,
-    codec: CD,
-    node_comm: NodeComm,
-) -> Result<(), ActorError>
+pub struct RuntimeCtx {
+    pub addr: ActorAddrRef,
+    pub node_comm: NodeComm,
+}
+
+impl RuntimeCtx {
+    pub fn new(addr: ActorAddrRef, node_comm: NodeComm) -> Self {
+        RuntimeCtx { addr, node_comm }
+    }
+}
+
+impl<R, P, S, IM, OM> Behaviour<R, P, S, IM>
 where
-    I: Msg,
-    O: Msg,
-    R: ActorRecv<IMsg = I>,
-    P: ActorProcess<IMsg = I, OMsg = O>,
-    S: ActorSend<OMsg = O>,
-    CD: Encoder<O> + Decoder<Item = I, Error = DecodeErr> + Send + Sync + Clone + 'static,
+    IM: Msg,
+    OM: Msg,
+    R: ActorRecv<IMsg = IM>,
+    P: ActorProcess<IMsg = IM, OMsg = OM>,
+    S: ActorSend<OMsg = OM>,
 {
-    let my_addr = addr.to_string();
-    // let (r2p_tx, mut r2p_rx) = mpsc::unbounded_channel::<R2PMsg<I>>();
-    let (p2s_tx, p2s_rx) = mpsc::unbounded_channel::<O>();
-    let (r2p_tx, mut r2p_rx) =
-        priority_channel::<R2PMsg<I>>(behaviour.num_prios.unwrap_or(1), CHANNEL_SIZE);
+    pub async fn run<CD>(mut self, ctx: RuntimeCtx, codec: CD) -> Result<(), ActorError>
+    where
+        CD: Encoder<OM>
+            + Decoder<Item = IM, Error = std::io::Error>
+            + Send
+            + Sync
+            + Clone
+            + 'static,
+    {
+        let my_addr = ctx.addr.to_string();
+        let (p2s_tx, p2s_rx) = mpsc::unbounded_channel::<OM>();
+        let (r2p_tx, mut r2p_rx) = priority_channel::<R2PMsg<IM>>(self.num_prios, CHANNEL_SIZE);
 
-    let (controller_rx, controller_tx) = node_comm.split();
+        let (controller_rx, controller_tx) = ctx.node_comm.split();
 
-    let reciever = behaviour.take_recv();
-    let sender = behaviour.take_send();
-    let mut generators = behaviour.take_generators();
-    let mut processor = behaviour.proc;
+        let reciever = self.take_recv();
+        let sender = self.take_send();
+        let mut generators = self.take_generators();
+        let mut processor = self.proc;
 
-    let gen_handles: Vec<tokio::task::JoinHandle<_>> = generators
-        .drain(..)
-        .map(|gene| {
-            let tx = r2p_tx.clone();
-            tokio::spawn(generator(gene, tx))
-        })
-        .collect();
+        let gen_handles: Vec<tokio::task::JoinHandle<_>> = generators
+            .drain(..)
+            .map(|gene| {
+                let tx = r2p_tx.clone();
+                tokio::spawn(generator(gene, tx))
+            })
+            .collect();
 
-    let rx_handle = tokio::spawn(rx(
-        my_addr.clone().leak(),
-        reciever,
-        r2p_tx,
-        codec.clone(),
-        controller_rx,
-    ));
+        let rx_handle = tokio::spawn(rx(
+            my_addr.clone().leak(),
+            reciever,
+            r2p_tx,
+            codec.clone(),
+            controller_rx,
+        ));
 
-    let addr = my_addr.clone();
-    let proc_handle: JoinHandle<Result<(), ActorError>> =
-        tokio::task::spawn_blocking(move || -> Result<(), ActorError> {
-            tracing::info!("[ACTOR][{}] Processor Started", addr);
-            loop {
-                match r2p_rx.try_recv() {
-                    Ok(R2PMsg::Msg(m)) => {
-                        let processed = processor.process(m);
-                        for o in processed {
-                            p2s_tx.send(o).map_err(|_| ActorError::P2SErr)?;
+        let addr = my_addr.clone();
+        let proc_handle: JoinHandle<Result<(), ActorError>> =
+            tokio::task::spawn_blocking(move || -> Result<(), ActorError> {
+                tracing::info!("[ACTOR][{}] Processor Started", addr);
+                loop {
+                    match r2p_rx.try_recv() {
+                        Ok(R2PMsg::Msg(m)) => {
+                            let processed = processor.process(m);
+                            for o in processed {
+                                p2s_tx.send(o).map_err(|_| ActorError::P2SErr)?;
+                            }
+                        }
+                        Ok(R2PMsg::Exit) => {
+                            break;
+                        }
+                        Err(TryRecvError::Empty) => {
+                            continue;
+                        }
+                        Err(TryRecvError::Disconnected) => {
+                            break;
                         }
                     }
-                    Ok(R2PMsg::Exit) => {
-                        break;
-                    }
-                    Err(TryRecvError::Empty) => {
-                        continue;
-                    }
-                    Err(TryRecvError::Disconnected) => {
-                        break;
-                    }
                 }
-            }
-            tracing::info!("[ACTOR][{}] Processor Ended", addr);
-            Ok(())
-        });
-    let tx_handle = tokio::spawn(tx(my_addr.leak(), sender, p2s_rx, controller_tx, codec));
-    rx_handle.await??;
-    proc_handle.await??;
-    tx_handle.await?;
-    join_all(gen_handles).await;
-    Ok(())
+                tracing::info!("[ACTOR][{}] Processor Ended", addr);
+                Ok(())
+            });
+        let tx_handle = tokio::spawn(tx(my_addr.leak(), sender, p2s_rx, controller_tx, codec));
+        rx_handle.await??;
+        proc_handle.await??;
+        tx_handle.await?;
+        join_all(gen_handles).await;
+        Ok(())
+    }
 }
 
 async fn generator<G, M>(generator: G, p_tx: PriorityChannelTx<R2PMsg<M>>) -> Result<(), ActorError>

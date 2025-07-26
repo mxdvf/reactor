@@ -17,7 +17,7 @@ use tokio_util::{
 };
 
 use crate::{
-    ActorAddrRef, ActorRecv, ChannelAction, DecodeErr, Msg, R2PMsg,
+    ActorAddrRef, ActorRecv, ChannelAction, Msg, R2PMsg,
     err::{ActorError, RecieverErr},
     node_comm::{ControlInst, LocalChannelRx},
     prio_channel::PriorityChannelTx,
@@ -68,7 +68,7 @@ pub(crate) async fn rx<M, AR, D>(
     mut controller_rx: mpsc::Receiver<ControlInst>,
 ) -> Result<(), ActorError>
 where
-    D: Decoder<Item = M, Error = DecodeErr> + Clone + Send + Sync + 'static,
+    D: Decoder<Item = M, Error = std::io::Error> + Clone + Send + Sync + 'static,
     AR: ActorRecv<IMsg = M> + 'static,
     M: Msg,
 {
@@ -123,7 +123,7 @@ async fn tcp_recv<D, M, AR>(
 ) -> Result<(), ActorError>
 where
     M: Msg,
-    D: Decoder<Item = M, Error = DecodeErr> + Clone + Send + Sync + 'static,
+    D: Decoder<Item = M, Error = std::io::Error> + Clone + Send + Sync + 'static,
     AR: ActorRecv<IMsg = M> + 'static,
 {
     let socket = Socket::new(Domain::IPV4, Type::STREAM, None)

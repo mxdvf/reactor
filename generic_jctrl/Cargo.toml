@@ -10,3 +10,6 @@ reactor-jobm = { path = "../job_manager" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8.23"
 clap = { version = "4", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1.0"

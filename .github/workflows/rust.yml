@@ -36,7 +36,6 @@ jobs:
       run: |
           cd examples/ping_pong
           make install
-          make build_ops
           make node &
           sleep 1
           

@@ -1262,6 +1262,7 @@ dependencies = [
  "criterion",
  "futures",
  "log",
+ "reactor-macros",
  "socket2",
  "thiserror",
  "tokio",
@@ -1302,6 +1303,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "reactor-macros"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "bytes",
+ "quote",
+ "syn",
+ "tokio-util",
+]
+
+[[package]]
 name = "reactor-node"
 version = "0.1.0"
 dependencies = [
@@ -1332,6 +1344,7 @@ dependencies = [
  "env_logger",
  "reactor-jobm",
  "serde",
+ "serde_json",
  "tokio",
  "toml",
 ]

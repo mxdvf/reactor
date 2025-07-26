@@ -1,9 +1,8 @@
+use serde::Deserialize;
 use std::{
     collections::{BTreeMap, HashMap},
     iter,
 };
-
-use serde::Deserialize;
 
 pub type Hostname = &'static str;
 
@@ -45,9 +44,8 @@ pub struct LogicalOp {
 pub struct PhysicalOp {
     pub nodename: String,
     pub actor_name: String,
-
     #[serde(flatten)]
-    pub payload: HashMap<String, String>,
+    pub payload: HashMap<String, serde_json::Value>,
 }
 
 /// Takes logical Op  and places it on single or multiple Nodes. Returns list of Physical operator where a logical operator is placed
