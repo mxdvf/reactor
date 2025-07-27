@@ -741,7 +741,6 @@ dependencies = [
  "criterion",
  "futures",
  "log",
- "reactor-macros",
  "socket2",
  "thiserror",
  "tokio",
@@ -757,6 +756,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "quote",
+ "reactor-actor",
  "syn",
 ]
 

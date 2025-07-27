@@ -8,7 +8,7 @@ pub fn auto_default_priority(input: TokenStream) -> TokenStream {
     let name = &input.ident;
 
     TokenStream::from(quote! {
-        impl HasPriority for #name {}
+        impl reactor_actor::HasPriority for #name {}
     })
 }
 
@@ -18,6 +18,6 @@ pub fn auto_msg(input: TokenStream) -> TokenStream {
     let name = &input.ident;
 
     TokenStream::from(quote! {
-        impl Msg for #name {}
+        impl reactor_actor::Msg for #name {}
     })
 }

@@ -20,7 +20,6 @@ mod node_comm;
 mod prio_channel;
 mod recv;
 mod send;
-use reactor_macros::{DefaultPrio, Msg as DeriveMsg};
 
 pub use node_comm::{Connection, ControlInst, ControlReq, NodeComm};
 pub use prio_channel::{HasPriority, MAX_PRIO};
@@ -33,8 +32,11 @@ pub trait Msg: Send + Sync + std::fmt::Debug + HasPriority + 'static + Clone {}
 pub type ActorAddrRef = &'static str;
 pub type ActorAddr = String;
 
-#[derive(Encode, Decode, Debug, Clone, DefaultPrio, DeriveMsg)]
+#[derive(Encode, Decode, Debug, Clone)]
 pub struct EmptyMsg;
+
+impl HasPriority for EmptyMsg {}
+impl Msg for EmptyMsg {}
 
 /// Represents the action to take after receiving and decoding a message from a channel.
 ///
