@@ -17,3 +17,4 @@ bytes = "1"
 [dev-dependencies]
 bincode.workspace = true
 tokio-util.workspace = true
+reactor-actor = { path = "../actor" }
