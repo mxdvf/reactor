@@ -9,7 +9,6 @@ use reactor_actor::{ActorAddrRef, BehaviourBuilder};
 use reactor_macros::{DefaultPrio, Msg as DeriveMsg};
 use std::collections::HashMap;
 use std::time::Duration;
-use cfg_if::cfg_if;
 
 #[cfg(feature = "chaos")]
 use rand::random;
@@ -55,13 +54,12 @@ impl reactor_actor::ActorSend for Sender {
     type OMsg = PingPongMsg;
 
     async fn before_send(&mut self, _output: &Self::OMsg) -> &Vec<ActorAddrRef> {
-        cfg_if! {
-            if #[cfg(feature = "chaos")] {
-                let b: bool = random();
-                if b {
-                    warn!("Chaos! Dropping");
-                    return &self.drop;
-                }
+        #[cfg(feature = "chaos")]
+        {
+            let b: bool = random();
+            if b {
+                warn!("Chaos! Dropping");
+                return &self.drop;
             }
         }
         &self.other_addr
