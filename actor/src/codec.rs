@@ -25,6 +25,7 @@ impl<E, D> Default for BincodeCodec<E, D> {
 impl<E, D: bincode::Decode<()>> tokio_util::codec::Decoder for BincodeCodec<E, D> {
     type Item = D;
     type Error = std::io::Error;
+
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let frame = match self.length_codec.decode(src).map_err(|_| {
             std::io::Error::new(

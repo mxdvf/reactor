@@ -3,11 +3,11 @@ use std::marker::PhantomData;
 use bincode::{Decode, Encode};
 use err::ActorError;
 use futures::future::join_all;
-use prio_channel::{PriorityChannelTx, priority_channel};
+use reactor_channel::{ReactorChannelTx, reactor_channel};
 use recv::rx;
 use send::tx;
 use tokio::{
-    sync::mpsc::{self, error::TryRecvError},
+    sync::mpsc::{self},
     task::JoinHandle,
 };
 use tokio_util::codec::{Decoder, Encoder};
@@ -17,13 +17,13 @@ pub mod codec;
 pub mod common;
 pub mod err;
 mod node_comm;
-mod prio_channel;
+mod reactor_channel;
 mod recv;
 mod send;
 use reactor_macros::{DefaultPrio, Msg as DeriveMsg};
 
 pub use node_comm::{Connection, ControlInst, ControlReq, NodeComm};
-pub use prio_channel::{HasPriority, MAX_PRIO};
+pub use reactor_channel::{HasPriority, MAX_PRIO};
 
 static CHANNEL_SIZE: usize = 1 << 20;
 /// Messages that can flow between the actors.
@@ -66,17 +66,42 @@ pub enum ChannelAction {
     CLOSE,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug)]
 enum R2PMsg<T> {
     Msg(T),
     Exit,
+    #[allow(dead_code)]
+    AddPrio(mpsc::Receiver<R2PMsg<T>>),
+    #[allow(dead_code)]
+    RemoveLowPrio,
+}
+
+impl<T: Clone> Clone for R2PMsg<T> {
+    fn clone(&self) -> Self {
+        match self {
+            R2PMsg::Msg(m) => R2PMsg::Msg(m.clone()),
+            _ => panic!("Shouldn't Clone this"),
+        }
+    }
+}
+impl<T: PartialEq> PartialEq for R2PMsg<T> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (R2PMsg::AddPrio(_), _) => panic!("Can't Compare"),
+            (R2PMsg::Msg(m1), R2PMsg::Msg(m2)) => m1.eq(m2),
+            (R2PMsg::Exit, R2PMsg::Exit) => true,
+            _ => false,
+        }
+    }
 }
 
 impl<T: HasPriority> HasPriority for R2PMsg<T> {
     fn priority(&self) -> usize {
         match self {
             R2PMsg::Msg(t) => t.priority(),
-            R2PMsg::Exit => MAX_PRIO, // How to make it highest priority?!
+            R2PMsg::Exit => MAX_PRIO,
+            R2PMsg::AddPrio(_) => MAX_PRIO,
+            R2PMsg::RemoveLowPrio => MAX_PRIO,
         }
     }
 }
@@ -357,7 +382,7 @@ where
     {
         let my_addr = ctx.addr.to_string();
         let (p2s_tx, p2s_rx) = mpsc::unbounded_channel::<OM>();
-        let (r2p_tx, mut r2p_rx) = priority_channel::<R2PMsg<IM>>(self.num_prios, CHANNEL_SIZE);
+        let (r2p_tx, mut r2p_rx) = reactor_channel::<R2PMsg<IM>>(self.num_prios, CHANNEL_SIZE);
 
         let (controller_rx, controller_tx) = ctx.node_comm.split();
 
@@ -387,20 +412,23 @@ where
             tokio::task::spawn_blocking(move || -> Result<(), ActorError> {
                 tracing::info!("[ACTOR][{}] Processor Started", addr);
                 loop {
-                    match r2p_rx.try_recv() {
-                        Ok(R2PMsg::Msg(m)) => {
+                    match r2p_rx.recv() {
+                        Some(R2PMsg::Msg(m)) => {
                             let processed = processor.process(m);
                             for o in processed {
                                 p2s_tx.send(o).map_err(|_| ActorError::P2SErr)?;
                             }
                         }
-                        Ok(R2PMsg::Exit) => {
+                        Some(R2PMsg::AddPrio(new_rx)) => {
+                            r2p_rx = r2p_rx.add_prio(new_rx);
+                        }
+                        Some(R2PMsg::RemoveLowPrio) => {
+                            r2p_rx = r2p_rx.remove_prio();
+                        }
+                        Some(R2PMsg::Exit) => {
                             break;
                         }
-                        Err(TryRecvError::Empty) => {
-                            continue;
-                        }
-                        Err(TryRecvError::Disconnected) => {
+                        None => {
                             break;
                         }
                     }
@@ -417,7 +445,7 @@ where
     }
 }
 
-async fn generator<G, M>(generator: G, p_tx: PriorityChannelTx<R2PMsg<M>>) -> Result<(), ActorError>
+async fn generator<G, M>(generator: G, p_tx: ReactorChannelTx<R2PMsg<M>>) -> Result<(), ActorError>
 where
     G: Iterator<Item = M>,
     M: Msg + 'static,
