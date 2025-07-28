@@ -1262,7 +1262,6 @@ dependencies = [
  "criterion",
  "futures",
  "log",
- "reactor-macros",
  "socket2 0.6.0",
  "thiserror",
  "tokio",
@@ -1309,6 +1308,7 @@ dependencies = [
  "bincode",
  "bytes",
  "quote",
+ "reactor-actor",
  "syn",
  "tokio-util",
 ]
