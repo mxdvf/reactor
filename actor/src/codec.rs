@@ -2,12 +2,13 @@ use std::marker::PhantomData;
 use tokio_util::bytes::{Bytes, BytesMut};
 
 #[derive(Clone)]
-pub struct BincodeCodec<T> {
+pub struct BincodeCodec<E, D> {
     config: bincode::config::Configuration,
     length_codec: tokio_util::codec::LengthDelimitedCodec,
-    phantom_data: PhantomData<T>,
+    e: PhantomData<E>,
+    d: PhantomData<D>,
 }
-impl<T> Default for BincodeCodec<T> {
+impl<E, D> Default for BincodeCodec<E, D> {
     fn default() -> Self {
         BincodeCodec {
             config: bincode::config::standard(),
@@ -15,13 +16,14 @@ impl<T> Default for BincodeCodec<T> {
                 .length_field_length(4)
                 .max_frame_length(u32::MAX as usize)
                 .new_codec(),
-            phantom_data: PhantomData,
+            e: PhantomData,
+            d: PhantomData,
         }
     }
 }
 
-impl<T: bincode::Decode<()>> tokio_util::codec::Decoder for BincodeCodec<T> {
-    type Item = T;
+impl<E, D: bincode::Decode<()>> tokio_util::codec::Decoder for BincodeCodec<E, D> {
+    type Item = D;
     type Error = std::io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
@@ -44,9 +46,9 @@ impl<T: bincode::Decode<()>> tokio_util::codec::Decoder for BincodeCodec<T> {
     }
 }
 
-impl<T: bincode::Encode> tokio_util::codec::Encoder<T> for BincodeCodec<T> {
+impl<E: bincode::Encode, D> tokio_util::codec::Encoder<E> for BincodeCodec<E, D> {
     type Error = std::io::Error;
-    fn encode(&mut self, item: T, dst: &mut BytesMut) -> Result<(), Self::Error> {
+    fn encode(&mut self, item: E, dst: &mut BytesMut) -> Result<(), Self::Error> {
         let encoded_data = bincode::encode_to_vec(&item, self.config).map_err(|_| {
             std::io::Error::new(std::io::ErrorKind::InvalidData, "Failed to encode data")
         })?;
