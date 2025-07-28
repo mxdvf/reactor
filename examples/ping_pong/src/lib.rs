@@ -9,6 +9,10 @@ use reactor_macros::{DefaultPrio, Msg as DeriveMsg};
 use std::collections::HashMap;
 use std::time::Duration;
 
+#[cfg(feature = "chaos")]
+use rand::random;
+use log::{info, warn};
+
 // //////////////////////////////////////////////////////////////////////////////
 //                                    MSG
 // //////////////////////////////////////////////////////////////////////////////
@@ -28,7 +32,7 @@ impl reactor_actor::ActorProcess for Processor {
 
     fn process(&mut self, input: Self::IMsg) -> Vec<Self::OMsg> {
         std::thread::sleep(Duration::from_secs(1));
-        println!("{input:?}");
+        info!("{input:?}");
         match input {
             PingPongMsg::Ping => vec![PingPongMsg::Pong],
             PingPongMsg::Pong => vec![PingPongMsg::Ping],
@@ -41,11 +45,22 @@ impl reactor_actor::ActorProcess for Processor {
 // //////////////////////////////////////////////////////////////////////////////
 struct Sender {
     other_addr: Vec<ActorAddrRef>,
+
+    #[cfg(feature = "chaos")]
+    drop: Vec<ActorAddrRef>
 }
 impl reactor_actor::ActorSend for Sender {
     type OMsg = PingPongMsg;
 
     async fn before_send(&mut self, _output: &Self::OMsg) -> &Vec<ActorAddrRef> {
+        #[cfg(feature = "chaos")]
+        {
+            let b: bool = random();
+            if b {
+                warn!("Chaos! Dropping");
+                return &self.drop;
+            }
+        }
         &self.other_addr
     }
 }
@@ -53,6 +68,8 @@ impl Sender {
     fn new(other_actor: ActorAddrRef) -> Self {
         Sender {
             other_addr: vec![other_actor],
+            #[cfg(feature = "chaos")]
+            drop: vec![]
         }
     }
 }

@@ -5,6 +5,9 @@ install_node:
 install_jobc:
 	cargo install --debug --path ../../generic_jctrl/
 
+chaos:
+	cargo build --features chaos
+
 build:
 	cargo build
 
