@@ -17,7 +17,7 @@ use tokio_util::{
 };
 
 use crate::{
-    ActorAddrRef, ActorRecv, ChannelAction, Msg, R2PMsg,
+    ActorAddrRef, ActorRecv, ChannelAction, Msg, R2PMsg, SubDecoderStore,
     err::{ActorError, RecieverErr},
     node_comm::{ControlInst, LocalChannelRx},
     reactor_channel::ReactorChannelTx,
@@ -65,6 +65,7 @@ pub(crate) async fn rx<M, AR, D>(
     reciever: Option<AR>,
     p_tx: ReactorChannelTx<R2PMsg<M>>,
     decoder: D,
+    sub_decoders: Option<SubDecoderStore<M>>,
     mut controller_rx: mpsc::Receiver<ControlInst>,
 ) -> Result<(), ActorError>
 where
@@ -85,6 +86,7 @@ where
                     port,
                     cancel_token.clone(),
                     decoder.clone(),
+                    sub_decoders,
                     p_tx.clone(),
                     channel_state.clone(),
                 ));
@@ -118,6 +120,7 @@ async fn tcp_recv<D, M, AR>(
     port: u16,
     cancel_token: CancellationToken,
     decoder: D,
+    sub_decoders: Option<SubDecoderStore<M>>,
     p_tx: ReactorChannelTx<R2PMsg<M>>,
     cstate: Option<Arc<Mutex<AR>>>,
 ) -> Result<(), ActorError>
@@ -242,6 +245,7 @@ async fn local_parent_recv_subtask<M, AR>(
     loop {
         if let Some(msg) = local_rx.recv().await {
             let msg = msg.downcast::<M>().unwrap();
+            // let msg: M = msg.into();
             if let Some(cstate) = after_recv.as_ref() {
                 let action = cstate.lock().await.after_recv(parent_addr, &msg).await;
                 match action {

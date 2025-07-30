@@ -13,6 +13,7 @@ use serde_json::Value;
 use tokio::sync::mpsc::UnboundedSender;
 use tower_http::{classify::ServerErrorsFailureClass, trace::TraceLayer};
 use tracing::{Span, info_span};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 #[cfg(feature = "swagger")]
 use utoipa::{OpenApi, ToSchema};
 #[cfg(feature = "swagger")]
@@ -212,20 +213,6 @@ async fn stop_all_actors(State(state): State<Arc<AppState>>) -> impl IntoRespons
 struct ApiDoc;
 
 pub async fn webserver(job_control_tx: UnboundedSender<JobControllerReq>, port: u16) {
-    // tracing_subscriber::registry()
-    //     .with(
-    //         tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-    //             // axum logs rejections from built-in extractors with the `axum::rejection`
-    //             // target, at `TRACE` level. `axum::rejection=trace` enables showing those events
-    //             format!(
-    //                 "{}=debug,tower_http=debug,axum::rejection=trace",
-    //                 env!("CARGO_CRATE_NAME")
-    //             )
-    //             .into()
-    //         }),
-    //     )
-    //     .with(tracing_subscriber::fmt::layer())
-    //     .init();
     let state = Arc::new(AppState { tx: job_control_tx });
     let app = Router::new()
         .route("/start_actor", post(start_actor))
