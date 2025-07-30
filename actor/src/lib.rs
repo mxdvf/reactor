@@ -24,6 +24,7 @@ use reactor_macros::{DefaultPrio, Msg as DeriveMsg};
 
 pub use node_comm::{Connection, ControlInst, ControlReq, NodeComm};
 pub use reactor_channel::{HasPriority, MAX_PRIO};
+pub mod sub_msg_macro;
 
 static CHANNEL_SIZE: usize = 1 << 20;
 /// Messages that can flow between the actors.

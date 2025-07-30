@@ -8,8 +8,12 @@ use tokio::sync::{
     mpsc::{self, Sender, UnboundedReceiver, channel, unbounded_channel},
     oneshot,
 };
+use tracing::{error, info};
 use tracing_shared::SharedLogger;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+// use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[cfg(feature = "instrument")]
+pub mod instrument;
 
 #[cfg(feature = "dynop")]
 use code_gen::CodeGenerator;
@@ -75,38 +79,40 @@ struct RemoteActor {
 
 #[cfg(not(feature = "dynop"))]
 pub async fn node_controller(port: u16, operator_dir: PathBuf) {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                format!(
-                    "info,{}=info,tower_http=debug,axum::rejection=trace",
-                    env!("CARGO_CRATE_NAME")
-                )
-                .into()
-            }),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
-    log::info!("[Node] Controller Start on port {port}");
+    use opentelemetry::KeyValue;
+    use tracing::info_span;
+    use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-    let ops = load_ops(operator_dir);
+    let span = info_span!("init_node_controller");
+    let ops = span.in_scope(|| load_ops(operator_dir));
 
     let (job_control_tx, job_control_rx) = unbounded_channel();
+
     let server_handle = tokio::spawn(webserver(job_control_tx, port));
+    span.add_event(
+        "spawned_http_server",
+        vec![KeyValue::new("port", port as i64)],
+    );
     let control_loop = tokio::spawn(actor_control_loop(job_control_rx, ops));
+    span.add_event("spawned_control_loop", vec![]);
+
+    drop(span);
 
     server_handle.await.unwrap();
     control_loop.await.unwrap();
 
-    log::info!("[Node] Controller Ended");
+    info!("[Node] Controller Ended");
 }
 
 #[cfg(not(feature = "dynop"))]
+#[tracing::instrument(fields(operator_dir = ?operator_dir, loaded_lib = tracing::field::Empty))]
 fn load_ops(operator_dir: PathBuf) -> OpLibrary {
     use std::ffi::OsStr;
     use std::fs;
 
     use libloading::Library;
+    use opentelemetry::KeyValue;
+    use tracing_opentelemetry::OpenTelemetrySpanExt;
 
     let mut op_libs = OpLibrary::default();
 
@@ -122,18 +128,24 @@ fn load_ops(operator_dir: PathBuf) -> OpLibrary {
                     .strip_prefix("lib")
                     .unwrap_or(&file_stem)
                     .to_string();
+                tracing::Span::current().add_event(
+                    "loaded_lib",
+                    vec![KeyValue::new("lib", lib_name.to_string())],
+                );
                 unsafe {
                     let lib = Library::new(&path).unwrap();
-                    log::info!("[Node] Loading Library named {lib_name}");
                     op_libs.add_lib(lib_name, lib);
                 }
             }
         }
+    } else {
+        error!("Path is not a directory");
     }
     op_libs
 }
 
 #[cfg(not(feature = "dynop"))]
+// #[tracing::instrument(skip(job_control_rx, op_lib))]
 async fn actor_control_loop(
     mut job_control_rx: UnboundedReceiver<JobControllerReq>,
     op_lib: OpLibrary,
@@ -148,6 +160,7 @@ async fn actor_control_loop(
             req = actor_control_rx.recv() => {
                 match req {
                     Some(req) => {
+                        info!("[Node] Handling Actor Start");
                         handle_actor_req(req, &local_actors, &remote_actors).await;
                     },
                     None => break,
@@ -167,6 +180,7 @@ async fn actor_control_loop(
 }
 
 #[cfg(not(feature = "dynop"))]
+#[tracing::instrument(skip(req, op_lib, local_actors, remote_actors, actor_contrl_tx))]
 async fn handle_job_req(
     req: JobControllerReq,
     op_lib: &OpLibrary,
@@ -183,7 +197,7 @@ async fn handle_job_req(
             lib_name,
             payload,
         } => {
-            log::info!("[Node] Spawing Actor {addr} with op: {op_name}");
+            info!("[Node] Spawing Actor {addr} with op: {op_name}");
             let (control_tx, control_rx) = channel(20);
 
             let lib = op_lib.get_lib(&lib_name);
@@ -206,7 +220,7 @@ async fn handle_job_req(
             }
         }
         JobControllerReq::RemoteActorAdded { addr, sock_addr } => {
-            log::info!("[Node] Remote Actor {addr} Added");
+            info!("[Node] Remote Actor {addr} Added");
             remote_actors.insert(
                 addr,
                 RemoteActor {
@@ -216,13 +230,14 @@ async fn handle_job_req(
         }
         JobControllerReq::StopAllActors => {
             for (name, actor) in local_actors.drain() {
-                log::info!("[Node] Stopping Actor {name}");
+                info!("[Node] Stopping Actor {name}");
                 actor.handle.send(ControlInst::Stop).await.unwrap();
             }
         }
     }
 }
 
+#[tracing::instrument(skip(local_actors, remote_actors, req))]
 async fn handle_actor_req(
     req: ControlReq,
     local_actors: &HashMap<ActorAddr, LocalActor>,
@@ -230,7 +245,7 @@ async fn handle_actor_req(
 ) {
     match req {
         ControlReq::Resolve { addr, resp_tx } => {
-            log::debug!("[Node] Resolving {addr}");
+            info!("[Node] Resolving {addr}");
             if let Some(local) = local_actors.get(addr) {
                 let (write_half, read_half) = mpsc::channel(1 << 10);
                 local
@@ -243,9 +258,8 @@ async fn handle_actor_req(
                 resp_tx
                     .send(Connection::Remote(local.remote_actor_addr))
                     .unwrap();
-            } else if addr == "null" {
-                log::debug!("Received addr {addr}");
             } else {
+                error!("Couldn't Resolve {}", addr);
                 panic!("Couldn't Resolve {}", addr);
             }
         }
