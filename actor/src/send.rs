@@ -30,6 +30,11 @@ pub(crate) async fn tx<M, E, BS>(
 
     let mut sub_senders = JoinSet::new();
     tracing::info!("[ACTOR][{}] Tx Started", my_addr);
+    let decoder_name = if let Some(before_send) = before_send.as_ref() {
+        before_send.sub_decoder_name()
+    } else {
+        None
+    };
     while let Some(m) = p_rx.recv().await {
         let addrs = match before_send.as_mut() {
             Some(before_send) => before_send.before_send(&m).await,
@@ -40,6 +45,7 @@ pub(crate) async fn tx<M, E, BS>(
                 let (tx, rx) = mpsc::unbounded_channel::<M>();
                 sub_senders.spawn(sender_task(
                     my_addr,
+                    decoder_name.clone(),
                     addr,
                     rx,
                     codec.clone(),
@@ -56,6 +62,7 @@ pub(crate) async fn tx<M, E, BS>(
 
 async fn sender_task<M, E>(
     my_addr: ActorAddrRef,
+    decoder_name: Option<String>,
     send_addr: ActorAddrRef,
     rx: mpsc::UnboundedReceiver<M>,
     encoder: E,
@@ -66,12 +73,13 @@ async fn sender_task<M, E>(
 {
     async fn remote_sender<C: Encoder<M> + 'static + Send, M>(
         my_addr: ActorAddrRef,
+        decoder_name: Option<String>,
         mut tx: impl AsyncWrite + Unpin,
         mut rx: mpsc::UnboundedReceiver<M>,
         encoder: C,
     ) {
         log::info!("[ACTOR] SubTx Started");
-        send_handshake(&mut tx, my_addr).await;
+        send_handshake(&mut tx, my_addr, decoder_name).await;
         let mut framed_writer = FramedWrite::new(tx, encoder);
         loop {
             if let Some(msg) = rx.recv().await {
@@ -85,11 +93,12 @@ async fn sender_task<M, E>(
 
     async fn local_sender<M: std::fmt::Debug + Send + 'static + Clone>(
         my_addr: ActorAddrRef,
+        decoder_name: Option<String>,
         tx: mpsc::Sender<Box<dyn Any + Send>>,
         mut rx: mpsc::UnboundedReceiver<M>,
     ) {
         log::info!("[ACTOR] SubTx Started (Local)");
-        tx.send(Box::new(my_addr.to_string())).await.unwrap();
+        send_local_handshake(&tx, my_addr, decoder_name).await;
         loop {
             if let Some(msg) = rx.recv().await {
                 if tx.send(Box::new(msg)).await.is_err() {
@@ -114,7 +123,7 @@ async fn sender_task<M, E>(
             match TcpStream::connect(socket_addr).await {
                 Ok(s) => {
                     let (_, tx) = s.into_split();
-                    break remote_sender(my_addr, tx, rx, encoder).await;
+                    break remote_sender(my_addr, decoder_name, tx, rx, encoder).await;
                 }
                 Err(_) => {
                     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -123,18 +132,39 @@ async fn sender_task<M, E>(
             }
         },
         Connection::Local(write_half) => {
-            local_sender(my_addr, write_half, rx).await;
+            local_sender(my_addr, decoder_name, write_half, rx).await;
         }
     };
 }
 
-pub async fn send_handshake(tx: &mut (impl AsyncWrite + Unpin), handshake: &str) {
-    let bytes = handshake.as_bytes();
+async fn send_handshake(
+    tx: &mut (impl AsyncWrite + Unpin),
+    my_name: &str,
+    type_name: Option<String>,
+) {
+    let bytes = my_name.as_bytes();
     let len = bytes.len();
-
-    // Step 1: Write the length as a 4-byte big-endian integer
     tx.write_u32(len as u32).await.unwrap();
-
-    // Step 2: Write the UTF-8 bytes
     tx.write_all(bytes).await.unwrap();
+
+    if let Some(type_name) = type_name {
+        let bytes = type_name.as_bytes();
+        let len = bytes.len();
+        tx.write_u32(len as u32).await.unwrap();
+        tx.write_all(bytes).await.unwrap();
+    } else {
+        tx.write_u32(0).await.unwrap();
+    }
+}
+async fn send_local_handshake(
+    tx: &mpsc::Sender<Box<dyn Any + Send>>,
+    my_name: &str,
+    type_name: Option<String>,
+) {
+    let to_send = if let Some(type_name) = type_name {
+        (my_name.to_string(), Some(type_name.to_string()))
+    } else {
+        (my_name.to_string(), None)
+    };
+    tx.send(Box::new(to_send)).await.unwrap();
 }

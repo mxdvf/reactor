@@ -10,8 +10,6 @@ use reactor_macros::{DefaultPrio, Msg as DeriveMsg};
 use std::collections::HashMap;
 use std::time::Duration;
 
-#[cfg(feature = "chaos")]
-use rand::random;
 use log::{info, warn};
 
 // //////////////////////////////////////////////////////////////////////////////
@@ -80,13 +78,13 @@ impl Sender {
 // //////////////////////////////////////////////////////////////////////////////
 
 pub async fn actor(ctx: RuntimeCtx, other_addr: ActorAddrRef) {
-    BehaviourBuilder::new(Processor {})
+    BehaviourBuilder::new(Processor {}, BincodeCodec::default())
         .send(Sender::new(other_addr))
         .generator_if(ctx.addr == "pinger", || {
             vec![PingPongMsg::Ping].into_iter()
         })
         .build()
-        .run(ctx, BincodeCodec::default())
+        .run(ctx)
         .await
         .unwrap();
 }

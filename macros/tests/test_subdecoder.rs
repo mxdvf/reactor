@@ -25,6 +25,12 @@ mod tests {
         Twoint((usize, usize)),
     }
 
+    #[derive(Debug, PartialEq, bincode::Decode, SubDecoder)]
+    pub enum MyEnum2 {
+        Foo(Foo),
+        Bar(Bar),
+        Twoint((usize, usize)),
+    }
     #[test]
     fn test_from_trait() {
         let foo: MyEnum = Foo.into();
@@ -89,7 +95,7 @@ mod tests {
             })
             .unwrap();
 
-        let decoder = DECODER_MAP("FooBincodeSubDecoder").unwrap();
+        let decoder = MyEnum_DECODER_MAP("Foo").unwrap();
         let mut decoder = (decoder.decoder_cons)();
         let decoded = decoder.decode(&mut length_encoded_foo).unwrap().unwrap();
 
@@ -101,9 +107,9 @@ mod tests {
         let foo = Foo;
         let any_foo: Box<dyn Any + Send> = Box::new(foo);
 
-        let decoder = DECODER_MAP("FooBincodeSubDecoder").unwrap();
+        let decoder = MyEnum2_DECODER_MAP("Foo").unwrap();
         let my_enum = (decoder.any_to_m)(any_foo);
 
-        assert_eq!(my_enum, MyEnum::Foo(Foo));
+        assert_eq!(my_enum, MyEnum2::Foo(Foo));
     }
 }

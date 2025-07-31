@@ -1,4 +1,4 @@
-use std::{collections::HashMap, marker::PhantomData};
+use std::marker::PhantomData;
 
 use bincode::{Decode, Encode};
 use err::ActorError;
@@ -214,6 +214,17 @@ pub trait ActorSend: Send + 'static {
         &'a mut self,
         output: &Self::OMsg,
     ) -> impl std::future::Future<Output = &'a Vec<ActorAddrRef>> + Send;
+
+    /// Called before initiating connection with the receiver.
+    /// This tells the receiver to use the given type of decoder to decode my message.
+    /// If the decoder is not found on the receiving side, the receiver will crash.
+    ///
+    /// # Returns
+    ///
+    /// the name list of Decoder that the receiver should use.
+    fn sub_decoder_name(&self) -> Option<String> {
+        None
+    }
 }
 pub struct NoOpActorSend<M> {
     m: PhantomData<M>,
@@ -399,7 +410,7 @@ where
     S: ActorSend<OMsg = OM>,
     MCD: Encoder<OM> + Decoder<Item = IM, Error = std::io::Error> + Send + Sync + Clone + 'static,
 {
-    pub async fn run<CD>(mut self, ctx: RuntimeCtx) -> Result<(), ActorError> {
+    pub async fn run(mut self, ctx: RuntimeCtx) -> Result<(), ActorError> {
         let my_addr = ctx.addr.to_string();
         let (p2s_tx, p2s_rx) = mpsc::unbounded_channel::<OM>();
         let (r2p_tx, mut r2p_rx) = reactor_channel::<R2PMsg<IM>>(self.num_prios, CHANNEL_SIZE);

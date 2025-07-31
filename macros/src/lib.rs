@@ -36,21 +36,24 @@ fn sub_decoders_inner(input: proc_macro::TokenStream) -> Result<TokenStream> {
     let parse: Parse = virtue::parse::Parse::new(input.clone())?;
     let (mut generator, _attributes, body) = parse.into_generator();
     let mut name_to_type: HashMap<String, String> = HashMap::new();
-    let suffix = "BincodeSubDecoder";
     let enum_name = generator.name().clone().to_string();
 
     match body {
         Body::Enum(body) => {
             for variant in body.variants {
-                let field_type = if let Fields::Tuple(fields) = &variant.fields.unwrap() {
-                    let tokens: TokenStream = fields[0].r#type.iter().cloned().collect();
-                    Ok(tokens.to_string())
-                } else {
-                    Err(virtue::Error::Custom {
-                        error: "This macro is valid only for Enums".to_string(),
-                        span: None,
-                    })
-                }?;
+                let field_type = if let Some(variant_fields) = variant.fields{
+                    if let Fields::Tuple(fields) = &variant_fields {
+                        let tokens: TokenStream = fields[0].r#type.iter().cloned().collect();
+                        Ok(tokens.to_string())
+                    } else {
+                        Err(virtue::Error::Custom {
+                            error: "This macro is valid only for Enums".to_string(),
+                            span: None,
+                        })
+                    }?
+                }else{
+                    variant.name.to_string()
+                };
                 generator
                     .impl_for("From")
                     .with_trait_generics([field_type.clone()])
@@ -62,8 +65,7 @@ fn sub_decoders_inner(input: proc_macro::TokenStream) -> Result<TokenStream> {
                         Ok(())
                     })?;
 
-                let codec_name = format!("{}{suffix}", variant.name);
-                name_to_type.insert(codec_name, field_type);
+                name_to_type.insert(variant.name.to_string(), field_type);
             }
         }
         _ => Err(virtue::Error::Custom {
@@ -73,9 +75,9 @@ fn sub_decoders_inner(input: proc_macro::TokenStream) -> Result<TokenStream> {
     }
 
     let impls: TokenStream = generator.finish()?;
-    let map: TokenStream = generate_decoder_provider(enum_name, name_to_type);
+    let map: TokenStream = generate_decoder_provider(enum_name.clone(), name_to_type);
     let sum = impls.into_iter().chain(map).collect();
-    export_to_file("actor", "map", &sum);
+    export_to_file("actor", &enum_name, &sum);
     Ok(sum)
 }
 
@@ -104,8 +106,9 @@ fn generate_decoder_provider(
         }
     });
 
+    let function_ident: syn::Type = parse_str(&format!("{enum_name}_DECODER_MAP")).unwrap();
     let expanded = quote! {
-        fn DECODER_MAP(name: &str) -> Option<reactor_actor::DecoderProvider<#enum_ident>>{
+        fn #function_ident(name: &str) -> Option<reactor_actor::DecoderProvider<#enum_ident>>{
             #(#inserts)*
             None
         }

@@ -13,7 +13,6 @@ use serde_json::Value;
 use tokio::sync::mpsc::UnboundedSender;
 use tower_http::{classify::ServerErrorsFailureClass, trace::TraceLayer};
 use tracing::{Span, info_span};
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 #[cfg(feature = "swagger")]
 use utoipa::{OpenApi, ToSchema};
 #[cfg(feature = "swagger")]

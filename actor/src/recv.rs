@@ -23,6 +23,25 @@ use crate::{
     reactor_channel::ReactorChannelTx,
 };
 
+struct BoxedDecoder<M>(
+    Box<dyn tokio_util::codec::Decoder<Item = M, Error = std::io::Error> + Sync + Send>,
+);
+impl<M> Decoder for BoxedDecoder<M> {
+    type Item = M;
+
+    type Error = std::io::Error;
+
+    fn decode(
+        &mut self,
+        src: &mut tokio_util::bytes::BytesMut,
+    ) -> Result<Option<Self::Item>, Self::Error> {
+        self.0.decode(src)
+    }
+}
+
+fn any_to_m<M: 'static>(msg: Box<dyn std::any::Any>) -> M {
+    *(msg.downcast::<M>().unwrap())
+}
 /// Spawns tasks to receive messages from incoming network or local control channels,
 /// decode them, and forward them for processing based on channel state.
 ///
@@ -93,12 +112,20 @@ where
             }
             ControlInst::StartLocalRecv(mut local_rx) => {
                 let addr = local_rx.recv().await.unwrap();
-                let addr = *(addr.downcast::<String>().unwrap());
+                let (addr, msg_type) = *(addr.downcast::<(String, Option<String>)>().unwrap());
+                let msg_transform = match (sub_decoders, msg_type) {
+                    (Some(sub_decoders), Some(msg_type)) => {
+                        sub_decoders(&msg_type).unwrap().any_to_m
+                    }
+                    _ => any_to_m,
+                };
+
                 local_recv_set.spawn(local_parent_recv_subtask(
                     addr,
                     p_tx.clone(),
                     channel_state.clone(),
                     local_rx,
+                    msg_transform,
                 ));
             }
             ControlInst::Stop => {
@@ -159,23 +186,32 @@ where
                 })?;
                 let (mut rx, _) = socket.into_split();
                 // Whenever an actor connects it first needs to tell us its
-                // address.
-                let remote_addr = recv_remote_handshake(&mut rx).await;
-                let framed_reader = if let Some(sub_decoders) = sub_decoders{
-                    let decoder: Box<dyn tokio_util::codec::Decoder<Item = M, Error = std::io::Error> + Sync + Send> = (sub_decoders("").unwrap().decoder_cons)();
-                    remote_recv_set.spawn(remote_parent_recv_subtask(
-                        remote_addr,
-                        p_tx.clone(),
-                        cstate.clone(),
-                        FramedRead::new(rx, *decoder),
-                    ));
-                }else{
-                    panic!("");
-                   // let decoder = Box::new(master_decoder.clone());
-                    // FramedRead::new(rx, master_decoder.clone())
-                };
-                // let framed_reader = ;
+                // address, and message type.
+                let (remote_addr, msg_type) = recv_remote_handshake(&mut rx).await;
+                match (sub_decoders, msg_type){
+                    (Some(sub_decoders), Some(msg_type)) => {
+                        let decoder: Box<dyn tokio_util::codec::Decoder<Item = M, Error = std::io::Error> + Sync + Send> = (sub_decoders(&msg_type).unwrap().decoder_cons)();
+                        let boxed_decoder = BoxedDecoder(decoder);
+                        remote_recv_set.spawn(remote_parent_recv_subtask(
+                            remote_addr,
+                            p_tx.clone(),
+                            cstate.clone(),
+                            FramedRead::new(rx, boxed_decoder),
+                        ));
+                    },
+                    (None, Some(_)) => {
+                        panic!("I dont know how to decode your messages");
+                    }
+                    _ => {
+                        remote_recv_set.spawn(remote_parent_recv_subtask(
+                            remote_addr,
+                            p_tx.clone(),
+                            cstate.clone(),
+                            FramedRead::new(rx, master_decoder.clone()),
+                        ));
 
+                    },
+                }
             }
         }
     }
@@ -183,18 +219,26 @@ where
     Ok(())
 }
 
-async fn recv_remote_handshake(rx: &mut OwnedReadHalf) -> String {
+/// Receive actor name and message type
+async fn recv_remote_handshake(rx: &mut OwnedReadHalf) -> (String, Option<String>) {
     // Step 1: Read 4 bytes as the length prefix
     let size = rx.read_u32().await.unwrap();
-
     // Step 2: Allocate a buffer of that size
     let mut buf = vec![0u8; size as usize];
-
     // Step 3: Read exactly that many bytes into the buffer
     rx.read_exact(&mut buf).await.unwrap();
-
     // Step 4: Convert to String
-    String::from_utf8(buf).unwrap()
+    let actor_addr = String::from_utf8(buf).unwrap();
+
+    let size = rx.read_u32().await.unwrap();
+    if size == 0 {
+        return (actor_addr, None);
+    }
+    let mut buf = vec![0u8; size as usize];
+    rx.read_exact(&mut buf).await.unwrap();
+    let message_type = String::from_utf8(buf).unwrap();
+
+    (actor_addr, Some(message_type))
 }
 
 async fn remote_parent_recv_subtask<M, AR, D, RX>(
@@ -243,6 +287,7 @@ async fn local_parent_recv_subtask<M, AR>(
     row_q: ReactorChannelTx<R2PMsg<M>>,
     after_recv: Option<Arc<Mutex<AR>>>,
     mut local_rx: LocalChannelRx,
+    msg_transform: fn(Box<dyn std::any::Any>) -> M,
 ) where
     M: Msg + 'static,
     AR: ActorRecv<IMsg = M>,
@@ -251,7 +296,8 @@ async fn local_parent_recv_subtask<M, AR>(
     let parent_addr = parent_addr.leak();
     loop {
         if let Some(msg) = local_rx.recv().await {
-            let msg = msg.downcast::<M>().unwrap();
+            let msg = msg_transform(msg);
+            // let msg = msg.downcast::<M>().unwrap();
             // let msg: M = msg.into();
             if let Some(cstate) = after_recv.as_ref() {
                 let action = cstate.lock().await.after_recv(parent_addr, &msg).await;
@@ -268,10 +314,10 @@ async fn local_parent_recv_subtask<M, AR>(
                         break;
                     }
                 }
-                if row_q.send(R2PMsg::Msg(*msg.clone())).await.is_err() {
+                if row_q.send(R2PMsg::Msg(msg.clone())).await.is_err() {
                     break;
                 }
-            } else if row_q.send(R2PMsg::Msg(*msg.clone())).await.is_err() {
+            } else if row_q.send(R2PMsg::Msg(msg.clone())).await.is_err() {
                 break;
             }
         }

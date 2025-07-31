@@ -1,7 +1,4 @@
-use opentelemetry::{
-    KeyValue, global,
-    trace::{FutureExt, TracerProvider as _},
-};
+use opentelemetry::{KeyValue, global, trace::TracerProvider as _};
 use opentelemetry_sdk::{
     Resource,
     metrics::{MeterProviderBuilder, PeriodicReader, SdkMeterProvider},
@@ -12,7 +9,7 @@ use opentelemetry_semantic_conventions::{
     attribute::{DEPLOYMENT_ENVIRONMENT_NAME, SERVICE_VERSION},
 };
 use tracing_core::Level;
-use tracing_opentelemetry::{MetricsLayer, OpenTelemetryLayer};
+use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 // Create a Resource that captures information about the entity for which telemetry is recorded.
@@ -76,10 +73,6 @@ pub fn init_tracing() -> OtelGuard {
 // Construct TracerProvider for OpenTelemetryLayer
 fn init_tracer_provider() -> SdkTracerProvider {
     let exporter = opentelemetry_otlp::SpanExporter::builder()
-        .with_tonic()
-        .build()
-        .unwrap();
-    let log_exporter = opentelemetry_otlp::LogExporter::builder()
         .with_tonic()
         .build()
         .unwrap();
