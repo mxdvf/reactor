@@ -41,7 +41,7 @@ fn sub_decoders_inner(input: proc_macro::TokenStream) -> Result<TokenStream> {
     match body {
         Body::Enum(body) => {
             for variant in body.variants {
-                let field_type = if let Some(variant_fields) = variant.fields{
+                let field_type = if let Some(variant_fields) = variant.fields {
                     if let Fields::Tuple(fields) = &variant_fields {
                         let tokens: TokenStream = fields[0].r#type.iter().cloned().collect();
                         Ok(tokens.to_string())
@@ -51,7 +51,7 @@ fn sub_decoders_inner(input: proc_macro::TokenStream) -> Result<TokenStream> {
                             span: None,
                         })
                     }?
-                }else{
+                } else {
                     variant.name.to_string()
                 };
                 generator
@@ -99,7 +99,7 @@ fn generate_decoder_provider(
                     (*msg).into()
                 }
                 return Some(reactor_actor::DecoderProvider{
-                    decoder_cons, 
+                    decoder_cons,
                     any_to_m
                 })
             }
