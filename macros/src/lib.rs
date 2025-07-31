@@ -132,7 +132,7 @@ fn export_to_file(crate_name: &str, file_name: &str, item: &TokenStream) -> bool
                     if std::fs::create_dir_all(&path).is_err() {
                         return false;
                     }
-                    path.push(format!("{}.rs", file_name));
+                    path.push(format!("{file_name}.rs"));
                     if let Ok(mut file) = std::fs::File::create(path) {
                         let _ = file.write_all(item.to_string().as_bytes());
                         return true;
