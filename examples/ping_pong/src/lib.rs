@@ -1,8 +1,7 @@
 pub use reactor_actor::setup_shared_logger_ref;
 
 use bincode::{Decode, Encode};
-use reactor_actor::HasPriority;
-use reactor_actor::Msg;
+
 use reactor_actor::RuntimeCtx;
 use reactor_actor::codec::BincodeCodec;
 use reactor_actor::{ActorAddrRef, BehaviourBuilder};
