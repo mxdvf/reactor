@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use proc_macro::{self, TokenStream};
 use quote::quote;
 use syn::{DeriveInput, parse_macro_input, parse_str};
-use virtue::prelude::*;
+use virtue::{generate::Parent, prelude::*};
 
 #[proc_macro_derive(DefaultPrio)]
 pub fn auto_default_priority(input: TokenStream) -> TokenStream {
@@ -37,6 +37,7 @@ fn sub_decoders_inner(input: proc_macro::TokenStream) -> Result<TokenStream> {
     let (mut generator, _attributes, body) = parse.into_generator();
     let mut name_to_type: HashMap<String, String> = HashMap::new();
     let suffix = "BincodeSubDecoder";
+    let enum_name = generator.name().clone().to_string();
 
     match body {
         Body::Enum(body) => {
@@ -72,33 +73,41 @@ fn sub_decoders_inner(input: proc_macro::TokenStream) -> Result<TokenStream> {
     }
 
     let impls: TokenStream = generator.finish()?;
-    let map: TokenStream = generate_decoder_map(name_to_type);
+    let map: TokenStream = generate_decoder_provider(enum_name, name_to_type);
     let sum = impls.into_iter().chain(map).collect();
     export_to_file("actor", "map", &sum);
     Ok(sum)
 }
 
-fn generate_decoder_map(name_to_type: std::collections::HashMap<String, String>) -> TokenStream {
+fn generate_decoder_provider(
+    enum_name: String,
+    name_to_type: std::collections::HashMap<String, String>,
+) -> TokenStream {
+    let enum_ident: syn::Type = parse_str(&enum_name).unwrap();
+
     let inserts = name_to_type.into_iter().map(|(name, ty)| {
         let ty: syn::Type = parse_str(&ty).unwrap();
         quote! {
-            {
-                let decoder = BincodeSubdecoder::<#ty, MyEnum>::default();
-                m.insert(#name, Box::new(decoder));
+            if name == #name{
+                fn decoder_cons() -> Box<dyn tokio_util::codec::Decoder<Item = #enum_ident, Error = std::io::Error> + Sync + Send> {
+                    Box::new(BincodeSubdecoder::<#ty, #enum_ident>::default())
+                }
+                fn any_to_m(msg: Box<dyn std::any::Any>) -> #enum_ident {
+                    let msg = msg.downcast::<#ty>().unwrap();
+                    (*msg).into()
+                }
+                return Some(reactor_actor::DecoderProvider{
+                    decoder_cons, 
+                    any_to_m
+                })
             }
         }
     });
 
     let expanded = quote! {
-        lazy_static::lazy_static! {
-            static ref DECODER_MAP: std::collections::HashMap<
-                &'static str,
-                Box<dyn tokio_util::codec::Decoder<Item = MyEnum, Error = std::io::Error> + Sync + Send>
-            > = {
-                let mut m: HashMap<&'static str, Box<dyn tokio_util::codec::Decoder<Item=MyEnum, Error=std::io::Error> + Sync + Send>> = HashMap::new();
-                #(#inserts)*
-                m
-            };
+        fn DECODER_MAP(name: &str) -> Option<reactor_actor::DecoderProvider<#enum_ident>>{
+            #(#inserts)*
+            None
         }
     };
 

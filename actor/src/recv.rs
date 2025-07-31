@@ -119,7 +119,7 @@ where
 async fn tcp_recv<D, M, AR>(
     port: u16,
     cancel_token: CancellationToken,
-    decoder: D,
+    master_decoder: D,
     sub_decoders: Option<SubDecoderStore<M>>,
     p_tx: ReactorChannelTx<R2PMsg<M>>,
     cstate: Option<Arc<Mutex<AR>>>,
@@ -161,14 +161,21 @@ where
                 // Whenever an actor connects it first needs to tell us its
                 // address.
                 let remote_addr = recv_remote_handshake(&mut rx).await;
-                let framed_reader = FramedRead::new(rx, decoder.clone());
+                let framed_reader = if let Some(sub_decoders) = sub_decoders{
+                    let decoder: Box<dyn tokio_util::codec::Decoder<Item = M, Error = std::io::Error> + Sync + Send> = (sub_decoders("").unwrap().decoder_cons)();
+                    remote_recv_set.spawn(remote_parent_recv_subtask(
+                        remote_addr,
+                        p_tx.clone(),
+                        cstate.clone(),
+                        FramedRead::new(rx, *decoder),
+                    ));
+                }else{
+                    panic!("");
+                   // let decoder = Box::new(master_decoder.clone());
+                    // FramedRead::new(rx, master_decoder.clone())
+                };
+                // let framed_reader = ;
 
-                remote_recv_set.spawn(remote_parent_recv_subtask(
-                    remote_addr,
-                    p_tx.clone(),
-                    cstate.clone(),
-                    framed_reader,
-                ));
             }
         }
     }

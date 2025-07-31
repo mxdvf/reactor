@@ -24,7 +24,6 @@ use reactor_macros::{DefaultPrio, Msg as DeriveMsg};
 
 pub use node_comm::{Connection, ControlInst, ControlReq, NodeComm};
 pub use reactor_channel::{HasPriority, MAX_PRIO};
-pub mod sub_msg_macro;
 
 static CHANNEL_SIZE: usize = 1 << 20;
 /// Messages that can flow between the actors.
@@ -255,10 +254,12 @@ pub struct Behaviour<R, P, S, M: 'static, MCD> {
     sub_decoders: Option<SubDecoderStore<M>>,
 }
 
-type SubDecoderStore<M> = &'static HashMap<
-    String,
-    Box<dyn tokio_util::codec::Decoder<Item = M, Error = std::io::Error> + Sync + Send>,
->;
+pub struct DecoderProvider<M> {
+    pub decoder_cons:
+        fn() -> Box<dyn tokio_util::codec::Decoder<Item = M, Error = std::io::Error> + Sync + Send>,
+    pub any_to_m: fn(Box<dyn std::any::Any>) -> M,
+}
+type SubDecoderStore<M> = fn(&str) -> Option<DecoderProvider<M>>;
 
 pub struct BehaviourBuilder<R, P, S, IM: 'static, OM, MCD> {
     recv: Option<R>,
