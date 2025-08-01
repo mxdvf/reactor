@@ -1,115 +1,109 @@
 #[cfg(test)]
-mod tests {
 
-    use std::any::Any;
+macro_rules! union {
+    ($enum_name:ident, $($variant:ident),+) => {
+        #[derive(Debug, PartialEq, bincode::Decode)]
+        pub enum $enum_name {
+            $(
+                $variant($variant),
+            )+
+        }
 
-    use reactor_macros::SubDecoder;
-    use tokio_util::codec::Decoder;
-    use tokio_util::{
-        bytes::{Bytes, BytesMut},
-        codec::Encoder as _,
+        $(
+            impl From<$variant> for $enum_name {
+                fn from(value: $variant) -> Self {
+                    $enum_name::$variant(value)
+                }
+            }
+
+            impl From<$enum_name> for $variant {
+                fn from(value: $enum_name) -> Self {
+                    match value {
+                        $enum_name::$variant(inner) => inner,
+                        _ => panic!(concat!("Not a ", stringify!($variant))),
+                    }
+                }
+            }
+        )+
     };
+}
 
+macro_rules! impl_convert_via {
+    ($from:ty, $via:ty, $to:ty) => {
+        impl From<$from> for $to {
+            fn from(value: $from) -> Self {
+                let intermediate: $via = value.into();
+                intermediate.into()
+            }
+        }
+    };
+}
+
+macro_rules! gen_decoders {
+    ($func_name:ident, $input_ty:ty, $( $variant:ident ),+ $(,)?) => {
+        fn $func_name(name: &str) -> Option<reactor_actor::DecoderProvider<$input_ty>> {
+            $(
+                if name == stringify!($variant) {
+                    fn decoder_cons(
+                    ) -> Box<dyn tokio_util::codec::Decoder<Item = $input_ty, Error = std::io::Error> + Sync + Send> {
+                        Box::new(BincodeSubdecoder::<$variant, $input_ty>::default())
+                    }
+                    fn any_to_m(msg: Box<dyn std::any::Any>) -> $input_ty {
+                        let msg = msg.downcast::<$variant>().unwrap();
+                        (*msg).into()
+                    }
+                    return Some(reactor_actor::DecoderProvider {
+                        decoder_cons,
+                        any_to_m,
+                    });
+                }
+            )+
+            None
+        }
+    };
+}
+
+mod tests {
     use reactor_actor::codec::BincodeSubdecoder;
 
     #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
-    pub struct Foo;
+    pub struct WriteOut;
 
     #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
-    pub struct Bar;
+    pub struct ReadOut;
 
-    #[derive(Debug, PartialEq, bincode::Decode, SubDecoder)]
-    pub enum MyEnum {
-        Foo(Foo),
-        Bar(Bar),
-        Twoint((usize, usize)),
-    }
+    union!(ServerIn, ReadOut, WriteOut);
 
-    #[derive(Debug, PartialEq, bincode::Decode, SubDecoder)]
-    pub enum MyEnum2 {
-        Foo(Foo),
-        Bar(Bar),
-        Twoint((usize, usize)),
-    }
-    #[test]
-    fn test_from_trait() {
-        let foo: MyEnum = Foo.into();
-        let bar: MyEnum = Bar.into();
-        let c: MyEnum = (1, 2).into();
+    #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
+    pub struct ReadAck;
+    #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
+    pub struct WriteAck;
 
-        assert_eq!(foo, MyEnum::Foo(Foo));
-        assert_eq!(bar, MyEnum::Bar(Bar));
-        assert_eq!(c, MyEnum::Twoint((1, 2)));
-    }
+    // From Server to Clients
+    union!(ServerOut, ReadAck, WriteAck);
 
-    #[test]
-    fn test_sub_decoder() {
-        let foo = Foo;
-        let config = bincode::config::standard();
-        let mut length_codec = tokio_util::codec::LengthDelimitedCodec::builder()
-            .length_field_length(4)
-            .max_frame_length(u32::MAX as usize)
-            .new_codec();
-        let encoded_foo: Vec<u8> = bincode::encode_to_vec(&foo, config)
-            .map_err(|_| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, "Failed to encode data")
-            })
-            .unwrap();
-        let mut length_encoded_foo = BytesMut::new();
-        length_codec
-            .encode(Bytes::from(encoded_foo), &mut length_encoded_foo)
-            .map_err(|_| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Couldn't encode length-delimited data",
-                )
-            })
-            .unwrap();
+    #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
+    pub struct GeneratorOut;
+    // Clients can receive message from server as well as generator
+    union!(ReadIn, ReadAck, GeneratorOut);
+    union!(WriteIn, WriteAck, GeneratorOut);
 
-        let mut decoder = BincodeSubdecoder::<Foo, MyEnum>::default();
-        let decoded = decoder.decode(&mut length_encoded_foo).unwrap().unwrap();
+    impl_convert_via!(ServerOut, ReadAck, ReadIn);
+    impl_convert_via!(ServerOut, WriteAck, WriteIn);
 
-        assert_eq!(decoded, MyEnum::Foo(Foo));
-    }
-    #[test]
-    fn test_decoder_map() {
-        let foo = Foo;
-        let config = bincode::config::standard();
-        let mut length_codec = tokio_util::codec::LengthDelimitedCodec::builder()
-            .length_field_length(4)
-            .max_frame_length(u32::MAX as usize)
-            .new_codec();
-        let encoded_foo: Vec<u8> = bincode::encode_to_vec(&foo, config)
-            .map_err(|_| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, "Failed to encode data")
-            })
-            .unwrap();
-        let mut length_encoded_foo = BytesMut::new();
-        length_codec
-            .encode(Bytes::from(encoded_foo), &mut length_encoded_foo)
-            .map_err(|_| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Couldn't encode length-delimited data",
-                )
-            })
-            .unwrap();
-
-        let decoder = MyEnum_DECODER_MAP("Foo").unwrap();
-        let mut decoder = (decoder.decoder_cons)();
-        let decoded = decoder.decode(&mut length_encoded_foo).unwrap().unwrap();
-
-        assert_eq!(decoded, MyEnum::Foo(Foo));
-    }
+    gen_decoders!(server_in_decoders, ServerIn, ReadOut, WriteOut);
+    gen_decoders!(reader_in_decoders, ReadIn, ReadAck, ServerOut);
+    gen_decoders!(writer_in_decoders, WriteIn, WriteAck, ServerOut);
 
     #[test]
-    fn test_downcast() {
-        let foo = Foo;
-        let any_foo: Box<dyn Any + Send> = Box::new(foo);
+    fn test_blah() {
+        let _my_enum: ServerIn = WriteOut.into();
+        let server_out: ServerOut = ServerOut::ReadAck(ReadAck);
+        let read_ack: ReadAck = server_out.into();
+        let _read_in: ReadIn = read_ack.into();
 
-        let decoder = MyEnum2_DECODER_MAP("Foo").unwrap();
-        let my_enum = (decoder.any_to_m)(any_foo);
-
-        assert_eq!(my_enum, MyEnum2::Foo(Foo));
+        let server_out: ServerOut = ServerOut::ReadAck(ReadAck);
+        let _read_in: ReadIn = server_out.into();
+        let decoder = server_in_decoders("ReadOut").unwrap();
     }
 }
