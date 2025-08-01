@@ -1,3 +1,5 @@
+#![feature(log_syntax)]
+
 use std::marker::PhantomData;
 
 use bincode::{Decode, Encode};

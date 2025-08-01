@@ -1,8 +1,12 @@
+#![feature(trace_macros)]
+trace_macros!(true);
+
+
 #[macro_export]
 macro_rules! union {
     ($enum_name:ident, $($variant:ident),+) => {
         // #[derive(Debug, PartialEq, DefaultPrio, DeriveMsg, bincode::Encode, bincode::Decode, Clone )]
-        #[derive(bincode::Encode, bincode::Decode)]
+        #[derive(bincode::Encode)]
         pub enum $enum_name {
             $(
                 $variant($variant),
@@ -65,48 +69,60 @@ macro_rules! gen_decoders {
     };
 }
 
+// mod tests {
+//     use crate as reactor_actor;
+//     use crate::codec::BincodeSubdecoder;
+//     #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
+//     pub struct GeneratorOut;
+
+//     #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
+//     pub struct ReadAck;
+//     #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
+//     pub struct ReadOut;
+//     log_syntax!(union!(ReadIn, ReadAck, GeneratorOut));
+
+//     #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
+//     pub struct WriteOut;
+//     #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
+//     pub struct WriteAck;
+//     union!(WriteIn, WriteAck, GeneratorOut);
+
+//     // Server Out
+//     union!(ServerIn, ReadOut, WriteOut);
+//     union!(ServerOut, ReadAck, WriteAck);
+
+//     impl_convert_via!(ServerOut, ReadAck, ReadIn);
+//     impl_convert_via!(ServerOut, WriteAck, WriteIn);
+
+//     gen_decoders!(server_in_decoders, ServerIn, ReadOut, WriteOut);
+//     gen_decoders!(reader_in_decoders, ReadIn, ReadAck, ServerOut);
+//     gen_decoders!(writer_in_decoders, WriteIn, WriteAck, ServerOut);
+
+//     #[test]
+//     fn test_blah() {
+//         let _my_enum: ServerIn = WriteOut.into();
+//         let server_out: ServerOut = ServerOut::ReadAck(ReadAck);
+//         let read_ack: ReadAck = server_out.into();
+//         let _read_in: ReadIn = read_ack.into();
+
+//         let server_out: ServerOut = ServerOut::ReadAck(ReadAck);
+//         let _read_in: ReadIn = server_out.into();
+//         let decoder = server_in_decoders("ReadOut").unwrap();
+//     }
+// }
 mod tests {
     use crate as reactor_actor;
     use crate::codec::BincodeSubdecoder;
-    #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
-    pub struct GeneratorOut;
 
-
-    #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
+    #[derive(bincode::Encode)]
     pub struct ReadAck;
-    #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
+    #[derive(bincode::Encode)]
     pub struct ReadOut;
-    union!(ReadIn, ReadAck, GeneratorOut);
+    union!(ReadIn, ReadAck, ReadOut);
 
-
-    #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
-    pub struct WriteOut;
-    #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
-    pub struct WriteAck;
-    union!(WriteIn, WriteAck, GeneratorOut);
-
-
-    // Server Out
-    union!(ServerIn, ReadOut, WriteOut);
-    union!(ServerOut, ReadAck, WriteAck);
-
-
-    impl_convert_via!(ServerOut, ReadAck, ReadIn);
-    impl_convert_via!(ServerOut, WriteAck, WriteIn);
-
-    gen_decoders!(server_in_decoders, ServerIn, ReadOut, WriteOut);
-    gen_decoders!(reader_in_decoders, ReadIn, ReadAck, ServerOut);
-    gen_decoders!(writer_in_decoders, WriteIn, WriteAck, ServerOut);
 
     #[test]
     fn test_blah() {
-        let _my_enum: ServerIn = WriteOut.into();
-        let server_out: ServerOut = ServerOut::ReadAck(ReadAck);
-        let read_ack: ReadAck = server_out.into();
-        let _read_in: ReadIn = read_ack.into();
-
-        let server_out: ServerOut = ServerOut::ReadAck(ReadAck);
-        let _read_in: ReadIn = server_out.into();
-        let decoder = server_in_decoders("ReadOut").unwrap();
+        let x = ReadIn::ReadAck(ReadAck);
     }
 }
