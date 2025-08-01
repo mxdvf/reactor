@@ -1,8 +1,8 @@
-#[cfg(test)]
-
+#[macro_export]
 macro_rules! union {
     ($enum_name:ident, $($variant:ident),+) => {
-        #[derive(Debug, PartialEq, bincode::Decode)]
+        // #[derive(Debug, PartialEq, DefaultPrio, DeriveMsg, bincode::Encode, bincode::Decode, Clone )]
+        #[derive(bincode::Encode, bincode::Decode)]
         pub enum $enum_name {
             $(
                 $variant($variant),
@@ -28,6 +28,7 @@ macro_rules! union {
     };
 }
 
+#[macro_export]
 macro_rules! impl_convert_via {
     ($from:ty, $via:ty, $to:ty) => {
         impl From<$from> for $to {
@@ -39,6 +40,7 @@ macro_rules! impl_convert_via {
     };
 }
 
+#[macro_export]
 macro_rules! gen_decoders {
     ($func_name:ident, $input_ty:ty, $( $variant:ident ),+ $(,)?) => {
         fn $func_name(name: &str) -> Option<reactor_actor::DecoderProvider<$input_ty>> {
@@ -64,24 +66,30 @@ macro_rules! gen_decoders {
 }
 
 mod tests {
-    use reactor_actor::codec::BincodeSubdecoder;
+    use crate as reactor_actor;
+    use crate::codec::BincodeSubdecoder;
+    #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
+    pub struct GeneratorOut;
 
-    #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
-    pub struct WriteOut;
-    #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
-    pub struct ReadOut;
-    union!(ServerIn, ReadOut, WriteOut);
 
     #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
     pub struct ReadAck;
     #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
-    pub struct WriteAck;
-    union!(ServerOut, ReadAck, WriteAck);
+    pub struct ReadOut;
+    union!(ReadIn, ReadAck, GeneratorOut);
+
 
     #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
-    pub struct GeneratorOut;
-    union!(ReadIn, ReadAck, GeneratorOut);
+    pub struct WriteOut;
+    #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode)]
+    pub struct WriteAck;
     union!(WriteIn, WriteAck, GeneratorOut);
+
+
+    // Server Out
+    union!(ServerIn, ReadOut, WriteOut);
+    union!(ServerOut, ReadAck, WriteAck);
+
 
     impl_convert_via!(ServerOut, ReadAck, ReadIn);
     impl_convert_via!(ServerOut, WriteAck, WriteIn);
