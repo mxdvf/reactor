@@ -24,28 +24,22 @@ pub struct Write;
 #[derive(Encode, Decode, Debug, Clone, DefaultPrio, DeriveMsg)]
 pub struct Read;
 
-// Server = Read + Write
-#[derive(Encode, Decode, Debug, Clone, DefaultPrio, DeriveMsg, SubDecoder)]
-pub enum ServerIn {
-    Read(Read),
-    Write(Write),
-}
 
-// From Server to Clients
-#[derive(Encode, Decode, Debug, Clone, DefaultPrio, DeriveMsg)]
-pub enum ServerOut {
-    ReadAck,
-    WriteAck,
-}
+union!(ServerIn, ReadOut, WriteOut);
+union!(ServerOut, ReadAck, WriteAck);
 
 #[derive(Encode, Decode, Debug, Clone, DefaultPrio, DeriveMsg)]
 struct GeneratorOut;
+
+union!(ReadIn, ReadAck, GeneratorOut);
+union!(WriteIn, WriteAck, GeneratorOut);
+
 // Clients can receive message from server as well as generator
-#[derive(Encode, Decode, Debug, Clone, DefaultPrio, DeriveMsg, SubDecoder)]
-enum ClientIn {
-    FromServer(ServerOut),
-    FromGenerator(GeneratorOut),
-}
+// #[derive(Encode, Decode, Debug, Clone, DefaultPrio, DeriveMsg, SubDecoder)]
+// enum ClientIn {
+//     FromServer(ServerOut),
+//     FromGenerator(GeneratorOut),
+// }
 
 // //////////////////////////////////////////////////////////////////////////////
 //                                  Processor
@@ -65,20 +59,19 @@ impl reactor_actor::ActorProcess for Server {
 
 struct ReadClient;
 impl reactor_actor::ActorProcess for ReadClient {
-    type IMsg = ClientIn;
+    type IMsg = ReadIn;
     type OMsg = Read;
 
     fn process(&mut self, input: Self::IMsg) -> Vec<Self::OMsg> {
         match input {
-            ClientIn::FromServer(ServerOut::ReadAck) => {
+            ReadIn::ReadAck(_) => {
                 log::info!("Read Ack recvd");
+                vec![]
             }
-            ClientIn::FromServer(ServerOut::WriteAck) => {
-                panic!("Something went wrong");
+            ReadIn::GeneratorOut(_) => {
+                vec![Read]
             }
-            ClientIn::FromGenerator(_) => {
-                return vec![Read];
-            }
+
         }
         vec![]
     }
@@ -86,22 +79,19 @@ impl reactor_actor::ActorProcess for ReadClient {
 
 struct WriteClient;
 impl reactor_actor::ActorProcess for WriteClient {
-    type IMsg = ClientIn;
+    type IMsg = WriteIn;
     type OMsg = Write;
 
     fn process(&mut self, input: Self::IMsg) -> Vec<Self::OMsg> {
         match input {
-            ClientIn::FromServer(ServerOut::WriteAck) => {
+            WriteIn::WriteAck(_) => {
                 log::info!("Write Ack recvd");
+                vec![]
             }
-            ClientIn::FromServer(ServerOut::ReadAck) => {
-                panic!("Something went wrong");
-            }
-            ClientIn::FromGenerator(_) => {
-                return vec![Write];
+            WriteIn::FromServer(_) => {
+                vec![Write]
             }
         }
-        vec![]
     }
 }
 // //////////////////////////////////////////////////////////////////////////////
