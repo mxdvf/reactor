@@ -1,12 +1,10 @@
-#![feature(trace_macros)]
-trace_macros!(true);
-
+// #![feature(trace_macros)]
+// trace_macros!(true);
 
 #[macro_export]
 macro_rules! union {
     ($enum_name:ident, $($variant:ident),+) => {
         // #[derive(Debug, PartialEq, DefaultPrio, DeriveMsg, bincode::Encode, bincode::Decode, Clone )]
-        #[derive(bincode::Encode)]
         pub enum $enum_name {
             $(
                 $variant($variant),
@@ -113,6 +111,7 @@ macro_rules! gen_decoders {
 mod tests {
     use crate as reactor_actor;
     use crate::codec::BincodeSubdecoder;
+    use bincode::Encode;
 
     #[derive(bincode::Encode)]
     pub struct ReadAck;
@@ -120,6 +119,25 @@ mod tests {
     pub struct ReadOut;
     union!(ReadIn, ReadAck, ReadOut);
 
+    // impl ::bincode::Encode for ReadIn {
+    //     fn encode<__E: ::bincode::enc::Encoder>(
+    //         &self,
+    //         encoder: &mut __E,
+    //     ) -> core::result::Result<(), ::bincode::error::EncodeError> {
+    //         match self {
+    //             Self::ReadAck(field_0) => {
+    //                 <u32 as ::bincode::Encode>::encode(&(0u32), encoder)?;
+    //                 ::bincode::Encode::encode(field_0, encoder)?;
+    //                 core::result::Result::Ok(())
+    //             }
+    //             Self::ReadOut(field_0) => {
+    //                 <u32 as ::bincode::Encode>::encode(&(1u32), encoder)?;
+    //                 ::bincode::Encode::encode(field_0, encoder)?;
+    //                 core::result::Result::Ok(())
+    //             }
+    //         }
+    //     }
+    // }
 
     #[test]
     fn test_blah() {

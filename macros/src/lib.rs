@@ -2,7 +2,13 @@ use std::collections::HashMap;
 
 use proc_macro::{self, TokenStream};
 use quote::quote;
-use syn::{DeriveInput, Token, parse_macro_input, parse_str, token};
+use syn::{
+    DeriveInput, Token,
+    parse::{Parse, ParseStream},
+    parse_macro_input, parse_str,
+    punctuated::Punctuated,
+    token,
+};
 use virtue::{generate::Parent, prelude::*};
 
 #[proc_macro_derive(DefaultPrio)]
@@ -168,3 +174,60 @@ pub fn auto_msg(input: TokenStream) -> TokenStream {
 //     }
 //     false
 // }
+
+#[proc_macro]
+pub fn union(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as UnionInput);
+    let enum_name = input.enum_name;
+    let variants = input.variants;
+
+    let variant_defs = variants.iter().map(|v| {
+        quote! { #v(#v), }
+    });
+
+    let from_impls = variants.iter().map(|v| {
+        quote! {
+            impl From<#v> for #enum_name {
+                fn from(value: #v) -> Self {
+                    #enum_name::#v(value)
+                }
+            }
+
+            impl From<#enum_name> for #v {
+                fn from(value: #enum_name) -> Self {
+                    match value {
+                        #enum_name::#v(inner) => inner,
+                        _ => panic!(concat!("Not a ", stringify!(#v))),
+                    }
+                }
+            }
+        }
+    });
+
+    let expanded = quote! {
+        pub enum #enum_name {
+            #(#variant_defs)*
+        }
+
+        #(#from_impls)*
+    };
+
+    TokenStream::from(expanded)
+}
+
+struct UnionInput {
+    enum_name: Ident,
+    variants: Punctuated<Ident, Token![,]>,
+}
+
+impl Parse for UnionInput {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let enum_name: Ident = input.parse()?;
+        let _comma: Option<Token![,]> = input.parse().ok(); // allow optional comma
+        let variants = Punctuated::parse_separated_nonempty(input)?;
+        Ok(UnionInput {
+            enum_name,
+            variants,
+        })
+    }
+}
