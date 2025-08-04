@@ -18,7 +18,6 @@ pub use tracing_shared::setup_shared_logger_ref;
 pub mod codec;
 pub mod common;
 pub mod err;
-pub mod msg_macros;
 mod node_comm;
 mod reactor_channel;
 mod recv;

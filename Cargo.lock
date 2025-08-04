@@ -1549,6 +1549,7 @@ dependencies = [
  "bincode",
  "bytes",
  "lazy_static",
+ "proc-macro2",
  "quote",
  "reactor-actor",
  "syn",
