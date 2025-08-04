@@ -6,17 +6,62 @@ mod tests {
         codec::Encoder as _,
     };
 
-    #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode, Clone)]
+    #[derive(
+        Default,
+        Debug,
+        PartialEq,
+        bincode::Encode,
+        bincode::Decode,
+        Clone,
+        ::reactor_macros::DefaultPrio,
+        ::reactor_macros::Msg,
+    )]
     pub struct GeneratorOut;
 
-    #[derive(Default, Debug, PartialEq, Clone, bincode::Encode, bincode::Decode)]
+    #[derive(
+        Default,
+        Debug,
+        PartialEq,
+        bincode::Encode,
+        bincode::Decode,
+        Clone,
+        ::reactor_macros::DefaultPrio,
+        ::reactor_macros::Msg,
+    )]
     pub struct WriteOut;
-    #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode, Clone)]
+    #[derive(
+        Default,
+        Debug,
+        PartialEq,
+        bincode::Encode,
+        bincode::Decode,
+        Clone,
+        ::reactor_macros::DefaultPrio,
+        ::reactor_macros::Msg,
+    )]
     pub struct ReadOut;
 
-    #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode, Clone)]
+    #[derive(
+        Default,
+        Debug,
+        PartialEq,
+        bincode::Encode,
+        bincode::Decode,
+        Clone,
+        ::reactor_macros::DefaultPrio,
+        ::reactor_macros::Msg,
+    )]
     pub struct ReadAck;
-    #[derive(Default, Debug, PartialEq, bincode::Encode, bincode::Decode, Clone)]
+    #[derive(
+        Default,
+        Debug,
+        PartialEq,
+        bincode::Encode,
+        bincode::Decode,
+        Clone,
+        ::reactor_macros::DefaultPrio,
+        ::reactor_macros::Msg,
+    )]
     pub struct WriteAck;
 
     msg_converter! {

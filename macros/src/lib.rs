@@ -2,7 +2,7 @@ use proc_macro::{self, TokenStream};
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{
-    DeriveInput, Ident, Result, Token, bracketed,
+    DeriveInput, Ident, Result, Token, Type, bracketed,
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
@@ -38,7 +38,7 @@ struct MsgConverters {
 #[derive(Debug)]
 struct UnionDef {
     pub name: Ident,
-    pub variants: Vec<Ident>,
+    pub variants: Vec<Type>,
 }
 
 #[derive(Debug)]
@@ -72,7 +72,7 @@ impl Parse for MsgConverters {
                         while !content.is_empty() {
                             let name: Ident = content.parse()?;
                             content.parse::<Token![=]>()?;
-                            let variants: Punctuated<Ident, Token![,]> =
+                            let variants: Punctuated<Type, Token![,]> =
                                 Punctuated::parse_separated_nonempty(&content)?;
                             content.parse::<Token![;]>()?;
                             unions.push(UnionDef {
@@ -158,7 +158,7 @@ impl Parse for MsgConverters {
                     other => {
                         return Err(syn::Error::new(
                             section_keyword.span(),
-                            format!("Unexpected section keyword: {}", other),
+                            format!("Unexpected section keyword: {other}"),
                         ));
                     }
                 }
@@ -189,6 +189,8 @@ fn generate_enum(union: &UnionDef) -> TokenStream2 {
         pub enum #enum_name {
             #(#variants(#variants)),*
         }
+        impl ::reactor_actor::HasPriority for #enum_name {}
+        impl ::reactor_actor::Msg for #enum_name {}
     };
     // Implement From<Variant> for Enum
     let impl_from_variant = variants.iter().map(|variant| {

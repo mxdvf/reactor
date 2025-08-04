@@ -1274,7 +1274,6 @@ dependencies = [
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
  "opentelemetry_sdk",
- "reactor-macros",
  "socket2 0.6.0",
  "thiserror",
  "tokio",
@@ -1291,6 +1290,7 @@ name = "reactor-macros"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "proc-macro2",
  "quote",
  "syn",
  "virtue",

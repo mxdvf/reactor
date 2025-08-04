@@ -218,17 +218,6 @@ pub trait ActorSend: Send + 'static {
         &'a mut self,
         output: &Self::OMsg,
     ) -> impl std::future::Future<Output = &'a Vec<ActorAddrRef>> + Send;
-
-    /// Called before initiating connection with the receiver.
-    /// This tells the receiver to use the given type of decoder to decode my message.
-    /// If the decoder is not found on the receiving side, the receiver will crash.
-    ///
-    /// # Returns
-    ///
-    /// the name list of Decoder that the receiver should use.
-    fn sub_decoder_name(&self) -> Option<String> {
-        None
-    }
 }
 pub struct NoOpActorSend<M> {
     m: PhantomData<M>,
@@ -267,6 +256,7 @@ pub struct Behaviour<R, P, S, M: 'static, MCD> {
     num_prios: u8,
     master_codec: MCD,
     sub_decoders: Option<SubDecoderStore<M>>,
+    receiver_should_adapt: bool,
 }
 
 pub struct DecoderProvider<M> {
@@ -284,6 +274,7 @@ pub struct BehaviourBuilder<R, P, S, IM: 'static, OM, MCD> {
     num_prios: u8,
     master_codec: MCD,
     sub_decoders: Option<SubDecoderStore<IM>>,
+    ask_recver_to_adapt: bool,
     m: PhantomData<OM>,
 }
 
@@ -298,6 +289,7 @@ impl<P, IM, OM, MCD> BehaviourBuilder<NoOpActorRecv<IM>, P, NoOpActorSend<OM>, I
             m: PhantomData,
             master_codec,
             sub_decoders: None,
+            ask_recver_to_adapt: false,
         }
     }
 }
@@ -316,6 +308,7 @@ impl<R, P, S, IM, OM, MCD> BehaviourBuilder<R, P, S, IM, OM, MCD> {
             m: self.m,
             master_codec: self.master_codec,
             sub_decoders: self.sub_decoders,
+            ask_recver_to_adapt: self.ask_recver_to_adapt,
         }
     }
     pub fn send<S1>(self, send: S1) -> BehaviourBuilder<R, P, S1, IM, OM, MCD>
@@ -331,6 +324,7 @@ impl<R, P, S, IM, OM, MCD> BehaviourBuilder<R, P, S, IM, OM, MCD> {
             m: self.m,
             master_codec: self.master_codec,
             sub_decoders: self.sub_decoders,
+            ask_recver_to_adapt: self.ask_recver_to_adapt,
         }
     }
 
@@ -361,6 +355,11 @@ impl<R, P, S, IM, OM, MCD> BehaviourBuilder<R, P, S, IM, OM, MCD> {
         self
     }
 
+    pub fn ask_receiver_to_adapt(mut self) -> BehaviourBuilder<R, P, S, IM, OM, MCD> {
+        self.ask_recver_to_adapt = true;
+        self
+    }
+
     pub fn sub_decoders(
         mut self,
         decoders: SubDecoderStore<IM>,
@@ -378,6 +377,7 @@ impl<R, P, S, IM, OM, MCD> BehaviourBuilder<R, P, S, IM, OM, MCD> {
             num_prios: self.num_prios,
             master_codec: self.master_codec,
             sub_decoders: self.sub_decoders,
+            receiver_should_adapt: self.ask_recver_to_adapt,
         }
     }
 }
@@ -475,6 +475,7 @@ where
         let tx_handle = tokio::spawn(tx(
             my_addr.leak(),
             sender,
+            self.receiver_should_adapt,
             p2s_rx,
             controller_tx,
             self.master_codec,

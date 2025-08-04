@@ -115,6 +115,7 @@ where
                 let (addr, msg_type) = *(addr.downcast::<(String, Option<String>)>().unwrap());
                 let msg_transform = match (sub_decoders, msg_type) {
                     (Some(sub_decoders), Some(msg_type)) => {
+                        println!("{msg_type}");
                         sub_decoders(&msg_type).unwrap().any_to_m
                     }
                     _ => any_to_m,

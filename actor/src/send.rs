@@ -18,6 +18,7 @@ use crate::{
 pub(crate) async fn tx<M, E, BS>(
     my_addr: ActorAddrRef,
     mut before_send: Option<BS>,
+    ask_receiver_to_adapt: bool,
     mut p_rx: mpsc::UnboundedReceiver<M>,
     controller_tx: mpsc::Sender<ControlReq>,
     codec: E,
@@ -27,14 +28,8 @@ pub(crate) async fn tx<M, E, BS>(
     E: Encoder<M> + 'static + Send + Clone,
 {
     let mut addr_to_buff: HashMap<ActorAddrRef, mpsc::UnboundedSender<M>> = HashMap::new();
-
     let mut sub_senders = JoinSet::new();
     tracing::info!("[ACTOR][{}] Tx Started", my_addr);
-    let decoder_name = if let Some(before_send) = before_send.as_ref() {
-        before_send.sub_decoder_name()
-    } else {
-        None
-    };
     while let Some(m) = p_rx.recv().await {
         let addrs = match before_send.as_mut() {
             Some(before_send) => before_send.before_send(&m).await,
@@ -45,7 +40,7 @@ pub(crate) async fn tx<M, E, BS>(
                 let (tx, rx) = mpsc::unbounded_channel::<M>();
                 sub_senders.spawn(sender_task(
                     my_addr,
-                    decoder_name.clone(),
+                    ask_receiver_to_adapt,
                     addr,
                     rx,
                     codec.clone(),
@@ -62,7 +57,7 @@ pub(crate) async fn tx<M, E, BS>(
 
 async fn sender_task<M, E>(
     my_addr: ActorAddrRef,
-    decoder_name: Option<String>,
+    ask_receiver_to_adapt: bool,
     send_addr: ActorAddrRef,
     rx: mpsc::UnboundedReceiver<M>,
     encoder: E,
@@ -73,13 +68,15 @@ async fn sender_task<M, E>(
 {
     async fn remote_sender<C: Encoder<M> + 'static + Send, M>(
         my_addr: ActorAddrRef,
-        decoder_name: Option<String>,
+        ask_receiver_to_adapt: bool,
         mut tx: impl AsyncWrite + Unpin,
         mut rx: mpsc::UnboundedReceiver<M>,
         encoder: C,
     ) {
         log::info!("[ACTOR] SubTx Started");
-        send_handshake(&mut tx, my_addr, decoder_name).await;
+        let decoder_name = std::any::type_name::<M>().to_string();
+        println!("{decoder_name} {ask_receiver_to_adapt}");
+        send_remote_handshake(&mut tx, my_addr, decoder_name, ask_receiver_to_adapt).await;
         let mut framed_writer = FramedWrite::new(tx, encoder);
         loop {
             if let Some(msg) = rx.recv().await {
@@ -93,12 +90,13 @@ async fn sender_task<M, E>(
 
     async fn local_sender<M: std::fmt::Debug + Send + 'static + Clone>(
         my_addr: ActorAddrRef,
-        decoder_name: Option<String>,
+        ask_receiver_to_adapt: bool,
         tx: mpsc::Sender<Box<dyn Any + Send>>,
         mut rx: mpsc::UnboundedReceiver<M>,
     ) {
         log::info!("[ACTOR] SubTx Started (Local)");
-        send_local_handshake(&tx, my_addr, decoder_name).await;
+        let decoder_name = std::any::type_name::<M>().to_string();
+        send_local_handshake(&tx, my_addr, decoder_name, ask_receiver_to_adapt).await;
         loop {
             if let Some(msg) = rx.recv().await {
                 if tx.send(Box::new(msg)).await.is_err() {
@@ -123,7 +121,7 @@ async fn sender_task<M, E>(
             match TcpStream::connect(socket_addr).await {
                 Ok(s) => {
                     let (_, tx) = s.into_split();
-                    break remote_sender(my_addr, decoder_name, tx, rx, encoder).await;
+                    break remote_sender(my_addr, ask_receiver_to_adapt, tx, rx, encoder).await;
                 }
                 Err(_) => {
                     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -132,22 +130,23 @@ async fn sender_task<M, E>(
             }
         },
         Connection::Local(write_half) => {
-            local_sender(my_addr, decoder_name, write_half, rx).await;
+            local_sender(my_addr, ask_receiver_to_adapt, write_half, rx).await;
         }
     };
 }
 
-async fn send_handshake(
+async fn send_remote_handshake(
     tx: &mut (impl AsyncWrite + Unpin),
     my_name: &str,
-    type_name: Option<String>,
+    type_name: String,
+    ask_receiver_to_adapt: bool,
 ) {
     let bytes = my_name.as_bytes();
     let len = bytes.len();
     tx.write_u32(len as u32).await.unwrap();
     tx.write_all(bytes).await.unwrap();
 
-    if let Some(type_name) = type_name {
+    if ask_receiver_to_adapt {
         let bytes = type_name.as_bytes();
         let len = bytes.len();
         tx.write_u32(len as u32).await.unwrap();
@@ -159,9 +158,10 @@ async fn send_handshake(
 async fn send_local_handshake(
     tx: &mpsc::Sender<Box<dyn Any + Send>>,
     my_name: &str,
-    type_name: Option<String>,
+    type_name: String,
+    ask_receiver_to_adapt: bool,
 ) {
-    let to_send = if let Some(type_name) = type_name {
+    let to_send = if ask_receiver_to_adapt {
         (my_name.to_string(), Some(type_name.to_string()))
     } else {
         (my_name.to_string(), None)
