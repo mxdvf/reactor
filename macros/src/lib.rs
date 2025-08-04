@@ -251,9 +251,8 @@ fn generate_decoders(def: &DecoderDef) -> TokenStream2 {
     let output_ty = &def.output;
 
     let arms: Vec<TokenStream2> = def.inputs.iter().map(|input_ty| {
-        let variant_str = input_ty.to_string();
         quote! {
-            if name == #variant_str {
+            if name == ::std::any::type_name::<#input_ty>().to_string() {
                 fn decoder_cons() -> ::std::boxed::Box<dyn ::tokio_util::codec::Decoder<Item = #output_ty, Error = ::std::io::Error> + ::core::marker::Sync + ::core::marker::Send> {
                     ::std::boxed::Box::new(::reactor_actor::codec::BincodeSubdecoder::<#input_ty, #output_ty>::default())
                 }
@@ -270,10 +269,20 @@ fn generate_decoders(def: &DecoderDef) -> TokenStream2 {
             }
         }
     }).collect();
+    let type_names: Vec<TokenStream2> = def
+        .inputs
+        .iter()
+        .map(|input_ty| {
+            quote! {
+                ::std::any::type_name::<#input_ty>().to_string()
+            }
+        })
+        .collect();
 
     quote! {
         fn #func_name(name: &str) -> ::std::option::Option<::reactor_actor::DecoderProvider<#output_ty>> {
             #(#arms)*
+            println!("Avaialable decoders: {:?}", vec![#(#type_names),*]);
             None
         }
     }

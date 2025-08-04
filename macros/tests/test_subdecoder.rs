@@ -159,7 +159,7 @@ mod tests {
         let mut encoded = BytesMut::new();
         encode(ReadAck::default(), &mut encoded);
 
-        let Some(provider) = reader_decoder("ReadAck") else {
+        let Some(provider) = reader_decoder("test_subdecoder::tests::ReadAck") else {
             panic!("Decoder not found");
         };
 
@@ -174,7 +174,7 @@ mod tests {
         let mut encoded = BytesMut::new();
         encode(ServerOut::ReadAck(ReadAck::default()), &mut encoded);
 
-        let Some(provider) = reader_decoder("ReadAck") else {
+        let Some(provider) = reader_decoder("test_subdecoder::tests::ReadAck") else {
             panic!("Decoder not found");
         };
 
