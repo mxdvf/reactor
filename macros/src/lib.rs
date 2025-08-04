@@ -3,13 +3,13 @@ use std::collections::HashMap;
 use proc_macro::{self, TokenStream};
 use quote::quote;
 use syn::{
-    DeriveInput, Token,
+    DeriveInput, Ident, Result, Token,
     parse::{Parse, ParseStream},
     parse_macro_input, parse_str,
     punctuated::Punctuated,
     token,
 };
-use virtue::{generate::Parent, prelude::*};
+// use virtue::{generate::Parent, prelude::*};
 
 #[proc_macro_derive(DefaultPrio)]
 pub fn auto_default_priority(input: TokenStream) -> TokenStream {
@@ -205,6 +205,7 @@ pub fn union(input: TokenStream) -> TokenStream {
     });
 
     let expanded = quote! {
+        #[derive(bincode::Encode, bincode::Decode)]
         pub enum #enum_name {
             #(#variant_defs)*
         }

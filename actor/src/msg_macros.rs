@@ -1,71 +1,71 @@
 // #![feature(trace_macros)]
 // trace_macros!(true);
 
-#[macro_export]
-macro_rules! union {
-    ($enum_name:ident, $($variant:ident),+) => {
-        // #[derive(Debug, PartialEq, DefaultPrio, DeriveMsg, bincode::Encode, bincode::Decode, Clone )]
-        pub enum $enum_name {
-            $(
-                $variant($variant),
-            )+
-        }
+// #[macro_export]
+// macro_rules! union {
+//     ($enum_name:ident, $($variant:ident),+) => {
+//         // #[derive(Debug, PartialEq, DefaultPrio, DeriveMsg, bincode::Encode, bincode::Decode, Clone )]
+//         pub enum $enum_name {
+//             $(
+//                 $variant($variant),
+//             )+
+//         }
 
-        $(
-            impl From<$variant> for $enum_name {
-                fn from(value: $variant) -> Self {
-                    $enum_name::$variant(value)
-                }
-            }
+//         $(
+//             impl From<$variant> for $enum_name {
+//                 fn from(value: $variant) -> Self {
+//                     $enum_name::$variant(value)
+//                 }
+//             }
 
-            impl From<$enum_name> for $variant {
-                fn from(value: $enum_name) -> Self {
-                    match value {
-                        $enum_name::$variant(inner) => inner,
-                        _ => panic!(concat!("Not a ", stringify!($variant))),
-                    }
-                }
-            }
-        )+
-    };
-}
+//             impl From<$enum_name> for $variant {
+//                 fn from(value: $enum_name) -> Self {
+//                     match value {
+//                         $enum_name::$variant(inner) => inner,
+//                         _ => panic!(concat!("Not a ", stringify!($variant))),
+//                     }
+//                 }
+//             }
+//         )+
+//     };
+// }
 
-#[macro_export]
-macro_rules! impl_convert_via {
-    ($from:ty, $via:ty, $to:ty) => {
-        impl From<$from> for $to {
-            fn from(value: $from) -> Self {
-                let intermediate: $via = value.into();
-                intermediate.into()
-            }
-        }
-    };
-}
+// #[macro_export]
+// macro_rules! impl_convert_via {
+//     ($from:ty, $via:ty, $to:ty) => {
+//         impl From<$from> for $to {
+//             fn from(value: $from) -> Self {
+//                 let intermediate: $via = value.into();
+//                 intermediate.into()
+//             }
+//         }
+//     };
+// }
 
-#[macro_export]
-macro_rules! gen_decoders {
-    ($func_name:ident, $input_ty:ty, $( $variant:ident ),+ $(,)?) => {
-        fn $func_name(name: &str) -> Option<reactor_actor::DecoderProvider<$input_ty>> {
-            $(
-                if name == stringify!($variant) {
-                    fn decoder_cons(
-                    ) -> Box<dyn tokio_util::codec::Decoder<Item = $input_ty, Error = std::io::Error> + Sync + Send> {
-                        Box::new(BincodeSubdecoder::<$variant, $input_ty>::default())
-                    }
-                    fn any_to_m(msg: Box<dyn std::any::Any>) -> $input_ty {
-                        let msg = msg.downcast::<$variant>().unwrap();
-                        (*msg).into()
-                    }
-                    return Some(reactor_actor::DecoderProvider {
-                        decoder_cons,
-                        any_to_m,
-                    });
-                }
-            )+
-            None
-        }
-    };
-}
+// #[macro_export]
+// macro_rules! gen_decoders {
+//     ($func_name:ident, $input_ty:ty, $( $variant:ident ),+ $(,)?) => {
+//         fn $func_name(name: &str) -> Option<reactor_actor::DecoderProvider<$input_ty>> {
+//             $(
+//                 if name == stringify!($variant) {
+//                     fn decoder_cons(
+//                     ) -> Box<dyn tokio_util::codec::Decoder<Item = $input_ty, Error = std::io::Error> + Sync + Send> {
+//                         Box::new(BincodeSubdecoder::<$variant, $input_ty>::default())
+//                     }
+//                     fn any_to_m(msg: Box<dyn std::any::Any>) -> $input_ty {
+//                         let msg = msg.downcast::<$variant>().unwrap();
+//                         (*msg).into()
+//                     }
+//                     return Some(reactor_actor::DecoderProvider {
+//                         decoder_cons,
+//                         any_to_m,
+//                     });
+//                 }
+//             )+
+//             None
+//         }
+//     };
+// }
 
 // mod tests {
 //     use crate as reactor_actor;
@@ -117,7 +117,7 @@ mod tests {
     pub struct ReadAck;
     #[derive(bincode::Encode)]
     pub struct ReadOut;
-    union!(ReadIn, ReadAck, ReadOut);
+    // union!(ReadIn, ReadAck, ReadOut);
 
     // impl ::bincode::Encode for ReadIn {
     //     fn encode<__E: ::bincode::enc::Encoder>(
@@ -141,6 +141,6 @@ mod tests {
 
     #[test]
     fn test_blah() {
-        let x = ReadIn::ReadAck(ReadAck);
+        // let x = ReadIn::ReadOut(ReadAck);
     }
 }
