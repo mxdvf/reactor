@@ -34,7 +34,6 @@ thiserror = "2.0"
 
 
 
-
 [profile.profiling]
 inherits = "release"
 debug = true

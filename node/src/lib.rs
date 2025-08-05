@@ -93,8 +93,6 @@ pub async fn node_controller(port: u16, operator_dir: PathBuf) {
 
     server_handle.await.unwrap();
     control_loop.await.unwrap();
-
-    info!("[Node] Controller Ended");
 }
 
 #[cfg(not(feature = "dynop"))]
@@ -243,7 +241,7 @@ async fn handle_actor_req(
     match req {
         ControlReq::Resolve { addr, resp_tx } => {
             event!(target: "serving resolve addr", Level::INFO, addr);
-            if let Some(local) = local_actors.get(&addr) {
+            if let Some(local) = local_actors.get(addr) {
                 event!(target: "resolved", Level::INFO, addr="local");
                 let (write_half, read_half) = mpsc::channel(1 << 10);
                 local
@@ -252,7 +250,7 @@ async fn handle_actor_req(
                     .await
                     .unwrap();
                 resp_tx.send(Connection::Local(write_half)).unwrap();
-            } else if let Some(local) = remote_actors.get(&addr) {
+            } else if let Some(local) = remote_actors.get(addr) {
                 event!(target: "resolved", Level::INFO, addr=?local.remote_actor_addr);
                 resp_tx
                     .send(Connection::Remote(local.remote_actor_addr))
