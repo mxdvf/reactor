@@ -1,13 +1,11 @@
-use crate::DeriveMsg;
 use reactor_actor::{ActorAddrRef, BehaviourBuilder, RuntimeCtx};
-use reactor_macros::{msg_converter, DefaultPrio};
+use reactor_macros::DefaultPrio;
 use crate::client_utils::GeneratorOut;
-
-msg_converter! {
-   Unions: [
-       WriterIn = WriteAck, GeneratorOut;
-   ];
-}
+use reactor_actor::codec::BincodeCodec;
+use reactor_actor::SubDecoderStore;
+use crate::client_utils::ClientSender;
+use crate::WriterIn;
+use reactor_macros::Msg as DeriveMsg;
 
 #[derive(
     Default, Debug, PartialEq, bincode::Encode, bincode::Decode, Clone, DeriveMsg, DefaultPrio,
@@ -36,7 +34,7 @@ impl reactor_actor::ActorProcess for WriteClient {
     }
 }
 
-pub async fn _writer(ctx: RuntimeCtx, server_addr: ActorAddrRef, decoder: SubDecoderStore<WriterIn>) {
+pub(crate) async fn writer(ctx: RuntimeCtx, server_addr: ActorAddrRef, decoder: SubDecoderStore<WriterIn>) {
     BehaviourBuilder::new(WriteClient {}, BincodeCodec::default())
         .send(ClientSender::new(server_addr))
         .generator_if(true, || vec![WriterIn::GeneratorOut(GeneratorOut); 10].into_iter())
