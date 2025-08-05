@@ -19,5 +19,6 @@ pub struct Cli {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
+    let _gurad = reactor_inst::init_tracing();
     node_controller(cli.port, cli.dir).await;
 }

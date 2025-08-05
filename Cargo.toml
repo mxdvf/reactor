@@ -1,14 +1,17 @@
 [workspace]
 members = [
-    "actor",
-    "node",
-    "rpc_client",
-    "job_manager",
-    "generic_nctrl",
-    "generic_jctrl",
-    "macros"]
+    'generic_jctrl',
+    'actor',
+    'macros',
+    'node',
+    'generic_nctrl',
+		'instrument',
+		'examples/ping_pong',
+]
+exclude = [
+	'examples/ping_pong_with_codegen',
+]
 
-# exclude = ["examples"]
 resolver = "2"
 
 [workspace.package]
@@ -26,7 +29,6 @@ bincode = { version = "2.0.0", features = ["serde"] }
 futures = "0.3"
 socket2 = { version = "0.6", features=["all"]}
 thiserror = "2.0"
-
 
 
 
