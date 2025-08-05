@@ -264,7 +264,7 @@ pub struct DecoderProvider<M> {
         fn() -> Box<dyn tokio_util::codec::Decoder<Item = M, Error = std::io::Error> + Sync + Send>,
     pub any_to_m: fn(Box<dyn std::any::Any>) -> M,
 }
-type SubDecoderStore<M> = fn(&str) -> Option<DecoderProvider<M>>;
+pub type SubDecoderStore<M> = fn(&str) -> Option<DecoderProvider<M>>;
 
 pub struct BehaviourBuilder<R, P, S, IM: 'static, OM, MCD> {
     recv: Option<R>,
