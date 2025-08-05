@@ -8,7 +8,7 @@ use tokio::sync::{
     mpsc::{self, Sender, UnboundedReceiver, channel, unbounded_channel},
     oneshot,
 };
-use tracing::{error, info};
+use tracing::{Level, error, event, info};
 use tracing_shared::SharedLogger;
 // use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -111,8 +111,7 @@ fn load_ops(operator_dir: PathBuf) -> OpLibrary {
     use std::fs;
 
     use libloading::Library;
-    use opentelemetry::KeyValue;
-    use tracing_opentelemetry::OpenTelemetrySpanExt;
+    use tracing::{Level, event};
 
     let mut op_libs = OpLibrary::default();
 
@@ -124,14 +123,11 @@ fn load_ops(operator_dir: PathBuf) -> OpLibrary {
                 || path.extension() == Some(OsStr::new("dylib"))
             {
                 let file_stem = path.file_stem().unwrap().to_string_lossy().to_string();
-                let lib_name = file_stem
+                let lib_name: String = file_stem
                     .strip_prefix("lib")
                     .unwrap_or(&file_stem)
                     .to_string();
-                tracing::Span::current().add_event(
-                    "loaded_lib",
-                    vec![KeyValue::new("lib", lib_name.to_string())],
-                );
+                event!(target: "loaded_lib", Level::INFO, lib_name);
                 unsafe {
                     let lib = Library::new(&path).unwrap();
                     op_libs.add_lib(lib_name, lib);
@@ -141,11 +137,13 @@ fn load_ops(operator_dir: PathBuf) -> OpLibrary {
     } else {
         error!("Path is not a directory");
     }
+    if op_libs.num_libs() == 0 {
+        error!("Did not load any library");
+    }
     op_libs
 }
 
 #[cfg(not(feature = "dynop"))]
-// #[tracing::instrument(skip(job_control_rx, op_lib))]
 async fn actor_control_loop(
     mut job_control_rx: UnboundedReceiver<JobControllerReq>,
     op_lib: OpLibrary,
@@ -160,7 +158,6 @@ async fn actor_control_loop(
             req = actor_control_rx.recv() => {
                 match req {
                     Some(req) => {
-                        info!("[Node] Handling Actor Start");
                         handle_actor_req(req, &local_actors, &remote_actors).await;
                     },
                     None => break,
@@ -189,6 +186,8 @@ async fn handle_job_req(
     actor_contrl_tx: &Sender<ControlReq>,
     port: u16,
 ) {
+    use tracing::{Level, event};
+
     match req {
         JobControllerReq::SpawnActor {
             addr,
@@ -197,7 +196,7 @@ async fn handle_job_req(
             lib_name,
             payload,
         } => {
-            info!("[Node] Spawing Actor {addr} with op: {op_name}");
+            event!(target: "serving spawn actor", Level::INFO, addr, op_name, lib_name, ?payload);
             let (control_tx, control_rx) = channel(20);
 
             let lib = op_lib.get_lib(&lib_name);
@@ -216,11 +215,12 @@ async fn handle_job_req(
                     .send(ControlInst::StartTcpRecv(port))
                     .await
                     .unwrap();
+                event!(target: "actor spawned", Level::INFO, port);
                 local_actors.insert(addr, LocalActor { handle: control_tx });
             }
         }
         JobControllerReq::RemoteActorAdded { addr, sock_addr } => {
-            info!("[Node] Remote Actor {addr} Added");
+            event!(target: "serving remote actor added", Level::INFO, addr, ?sock_addr);
             remote_actors.insert(
                 addr,
                 RemoteActor {
@@ -229,8 +229,9 @@ async fn handle_job_req(
             );
         }
         JobControllerReq::StopAllActors => {
+            event!(target: "serving stop all actors", Level::INFO, total_actors=local_actors.len());
             for (name, actor) in local_actors.drain() {
-                info!("[Node] Stopping Actor {name}");
+                event!(target: "stopping actor", Level::INFO, name);
                 actor.handle.send(ControlInst::Stop).await.unwrap();
             }
         }
@@ -245,8 +246,9 @@ async fn handle_actor_req(
 ) {
     match req {
         ControlReq::Resolve { addr, resp_tx } => {
-            info!("[Node] Resolving {addr}");
+            event!(target: "serving resolve addr", Level::INFO, addr);
             if let Some(local) = local_actors.get(addr) {
+                event!(target: "resolved", Level::INFO, addr="local");
                 let (write_half, read_half) = mpsc::channel(1 << 10);
                 local
                     .handle
@@ -255,6 +257,7 @@ async fn handle_actor_req(
                     .unwrap();
                 resp_tx.send(Connection::Local(write_half)).unwrap();
             } else if let Some(local) = remote_actors.get(addr) {
+                event!(target: "resolved", Level::INFO, addr=?local.remote_actor_addr);
                 resp_tx
                     .send(Connection::Remote(local.remote_actor_addr))
                     .unwrap();
