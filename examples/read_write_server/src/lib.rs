@@ -4,15 +4,13 @@ mod server;
 mod writer;
 
 pub use reactor_actor::setup_shared_logger_ref;
+use reader::ReaderIn;
+use server::{ServerIn, ServerOut};
+use writer::WriterIn;
 
-use crate::client_utils::GeneratorOut;
-use crate::reader::reader as reader_behaviour;
-use crate::reader::ReadAck;
-use crate::reader::ReadOut;
+use crate::reader::{ReadAck, ReadOut, reader as reader_behaviour};
 use crate::server::server as server_behaviour;
-use crate::writer::writer as writer_behaviour;
-use crate::writer::WriteAck;
-use crate::writer::WriteOut;
+use crate::writer::{WriteAck, WriteOut, writer as writer_behaviour};
 use reactor_actor::RuntimeCtx;
 use reactor_macros::msg_converter;
 use std::collections::HashMap;
@@ -21,19 +19,6 @@ use std::collections::HashMap;
 // //////////////////////////////////////////////////////////////////////////////
 
 msg_converter! {
-   Unions: [
-       WriterIn = WriteAck, GeneratorOut;
-       ReaderIn = ReadAck, GeneratorOut;
-
-       ServerIn = ReadOut, WriteOut;
-       ServerOut = ReadAck, WriteAck;
-   ];
-
-   Adapters: [
-       ReaderIn from ServerOut via ReadAck;
-       WriterIn from ServerOut via WriteAck;
-   ];
-
    Decoders: [
        server_decoder can decode ReadOut, WriteOut to ServerIn;
        reader_decoder can decode ReadAck, ServerOut to ReaderIn;

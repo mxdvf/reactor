@@ -4,7 +4,7 @@ use libloading::Library;
 
 use crate::LibName;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(crate) struct OpLibrary {
     container: HashMap<LibName, Library>,
 }

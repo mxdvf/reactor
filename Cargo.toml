@@ -6,9 +6,14 @@ members = [
     "job_manager",
     "generic_nctrl",
     "generic_jctrl",
-    "macros"]
+    "macros",
+    "examples/ping_pong",
+    "examples/read_write_server",
+]
 
-# exclude = ["examples"]
+exclude = [
+    "examples/ping_pong_with_codegen"
+]
 resolver = "2"
 
 [workspace.package]

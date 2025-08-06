@@ -1,10 +1,16 @@
-use reactor_actor::{ActorAddrRef, BehaviourBuilder, RuntimeCtx};
-use reactor_actor::codec::BincodeCodec;
-use crate::reader::ReadAck;
-use crate::writer::WriteAck;
-use crate::ServerIn;
-use crate::ServerOut;
+use crate::reader::{ReadAck, ReadOut};
+use crate::writer::{WriteAck, WriteOut};
 use reactor_actor::SubDecoderStore;
+use reactor_actor::codec::BincodeCodec;
+use reactor_actor::{ActorAddrRef, BehaviourBuilder, RuntimeCtx};
+use reactor_macros::msg_converter;
+
+msg_converter! {
+   Unions: [
+       ServerIn = ReadOut, WriteOut;
+       ServerOut = ReadAck, WriteAck;
+   ];
+}
 
 // //////////////////////////////////////////////////////////////////////////////
 //                                  Processor
@@ -48,8 +54,12 @@ impl reactor_actor::ActorSend for ServerSender {
     }
 }
 
-
-pub(crate) async fn server(ctx: RuntimeCtx, reader_addr: ActorAddrRef, writer_addr: ActorAddrRef, decoder: SubDecoderStore<ServerIn>) {
+pub(crate) async fn server(
+    ctx: RuntimeCtx,
+    reader_addr: ActorAddrRef,
+    writer_addr: ActorAddrRef,
+    decoder: SubDecoderStore<ServerIn>,
+) {
     BehaviourBuilder::new(Server {}, BincodeCodec::default())
         .send(ServerSender::new(reader_addr, writer_addr))
         .sub_decoders(decoder)

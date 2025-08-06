@@ -12,9 +12,6 @@ use tracing::{Level, error, event, info};
 use tracing_shared::SharedLogger;
 // use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-#[cfg(feature = "instrument")]
-pub mod instrument;
-
 #[cfg(feature = "dynop")]
 use code_gen::CodeGenerator;
 #[cfg(feature = "dynop")]
@@ -79,9 +76,7 @@ struct RemoteActor {
 
 #[cfg(not(feature = "dynop"))]
 pub async fn node_controller(port: u16, operator_dir: PathBuf) {
-    use opentelemetry::KeyValue;
     use tracing::info_span;
-    use tracing_opentelemetry::OpenTelemetrySpanExt;
 
     let span = info_span!("init_node_controller");
     let ops = span.in_scope(|| load_ops(operator_dir));
@@ -89,12 +84,10 @@ pub async fn node_controller(port: u16, operator_dir: PathBuf) {
     let (job_control_tx, job_control_rx) = unbounded_channel();
 
     let server_handle = tokio::spawn(webserver(job_control_tx, port));
-    span.add_event(
-        "spawned_http_server",
-        vec![KeyValue::new("port", port as i64)],
-    );
+    event!(parent: &span, Level::INFO, msg="spawned_http_server", port=port);
+
+    event!(parent: &span, Level::INFO, msg="spawned_http_server", ?ops);
     let control_loop = tokio::spawn(actor_control_loop(job_control_rx, ops));
-    span.add_event("spawned_control_loop", vec![]);
 
     drop(span);
 
