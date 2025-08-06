@@ -252,7 +252,7 @@ fn generate_decoders(def: &DecoderDef) -> TokenStream2 {
 
     let arms: Vec<TokenStream2> = def.inputs.iter().map(|input_ty| {
         quote! {
-            if name == ::std::any::type_name::<#input_ty>().to_string() {
+            if name == ::std::any::type_name::<#input_ty>() {
                 fn decoder_cons() -> ::std::boxed::Box<dyn ::tokio_util::codec::Decoder<Item = #output_ty, Error = ::std::io::Error> + ::core::marker::Sync + ::core::marker::Send> {
                     ::std::boxed::Box::new(::reactor_actor::codec::BincodeSubdecoder::<#input_ty, #output_ty>::default())
                 }
