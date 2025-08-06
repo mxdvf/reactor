@@ -4,7 +4,7 @@ use libloading::Library;
 
 use crate::LibName;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(crate) struct OpLibrary {
     container: HashMap<LibName, Library>,
 }
@@ -16,5 +16,9 @@ impl OpLibrary {
 
     pub(crate) fn get_lib(&self, lib_name: &str) -> &Library {
         self.container.get(lib_name).unwrap()
+    }
+
+    pub(crate) fn num_libs(&self) -> usize {
+        self.container.len()
     }
 }

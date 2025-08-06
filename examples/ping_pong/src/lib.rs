@@ -9,9 +9,7 @@ use reactor_macros::{DefaultPrio, Msg as DeriveMsg};
 use std::collections::HashMap;
 use std::time::Duration;
 
-#[cfg(feature = "chaos")]
-use rand::random;
-use log::{info, warn};
+use log::info;
 
 // //////////////////////////////////////////////////////////////////////////////
 //                                    MSG
@@ -47,7 +45,7 @@ struct Sender {
     other_addr: Vec<ActorAddrRef>,
 
     #[cfg(feature = "chaos")]
-    drop: Vec<ActorAddrRef>
+    drop: Vec<ActorAddrRef>,
 }
 impl reactor_actor::ActorSend for Sender {
     type OMsg = PingPongMsg;
@@ -69,7 +67,7 @@ impl Sender {
         Sender {
             other_addr: vec![other_actor],
             #[cfg(feature = "chaos")]
-            drop: vec![]
+            drop: vec![],
         }
     }
 }
@@ -79,13 +77,11 @@ impl Sender {
 // //////////////////////////////////////////////////////////////////////////////
 
 pub async fn actor(ctx: RuntimeCtx, other_addr: ActorAddrRef) {
-    BehaviourBuilder::new(Processor {})
+    BehaviourBuilder::new(Processor {}, BincodeCodec::default())
         .send(Sender::new(other_addr))
-        .generator_if(ctx.addr == "pinger", || {
-            vec![PingPongMsg::Ping].into_iter()
-        })
+        .generator_if(ctx.addr == "pinger", || vec![PingPongMsg::Ping].into_iter())
         .build()
-        .run(ctx, BincodeCodec::default())
+        .run(ctx)
         .await
         .unwrap();
 }

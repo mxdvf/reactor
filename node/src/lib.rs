@@ -8,8 +8,9 @@ use tokio::sync::{
     mpsc::{self, Sender, UnboundedReceiver, channel, unbounded_channel},
     oneshot,
 };
+use tracing::{Level, error, event, info};
 use tracing_shared::SharedLogger;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+// use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[cfg(feature = "dynop")]
 use code_gen::CodeGenerator;
@@ -75,38 +76,35 @@ struct RemoteActor {
 
 #[cfg(not(feature = "dynop"))]
 pub async fn node_controller(port: u16, operator_dir: PathBuf) {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                format!(
-                    "info,{}=info,tower_http=debug,axum::rejection=trace",
-                    env!("CARGO_CRATE_NAME")
-                )
-                .into()
-            }),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
-    log::info!("[Node] Controller Start on port {port}");
+    use tracing::info_span;
 
-    let ops = load_ops(operator_dir);
+    let span = info_span!("init_node_controller");
+    let ops = span.in_scope(|| load_ops(operator_dir));
 
     let (job_control_tx, job_control_rx) = unbounded_channel();
+
     let server_handle = tokio::spawn(webserver(job_control_tx, port));
+    event!(parent: &span, Level::INFO, msg="spawned_http_server", port=port);
+
+    event!(parent: &span, Level::INFO, msg="spawned_http_server", ?ops);
     let control_loop = tokio::spawn(actor_control_loop(job_control_rx, ops));
+
+    drop(span);
 
     server_handle.await.unwrap();
     control_loop.await.unwrap();
 
-    log::info!("[Node] Controller Ended");
+    info!("[Node] Controller Ended");
 }
 
 #[cfg(not(feature = "dynop"))]
+#[tracing::instrument(fields(operator_dir = ?operator_dir, loaded_lib = tracing::field::Empty))]
 fn load_ops(operator_dir: PathBuf) -> OpLibrary {
     use std::ffi::OsStr;
     use std::fs;
 
     use libloading::Library;
+    use tracing::{Level, event};
 
     let mut op_libs = OpLibrary::default();
 
@@ -118,17 +116,22 @@ fn load_ops(operator_dir: PathBuf) -> OpLibrary {
                 || path.extension() == Some(OsStr::new("dylib"))
             {
                 let file_stem = path.file_stem().unwrap().to_string_lossy().to_string();
-                let lib_name = file_stem
+                let lib_name: String = file_stem
                     .strip_prefix("lib")
                     .unwrap_or(&file_stem)
                     .to_string();
+                event!(target: "loaded_lib", Level::INFO, lib_name);
                 unsafe {
                     let lib = Library::new(&path).unwrap();
-                    log::info!("[Node] Loading Library named {lib_name}");
                     op_libs.add_lib(lib_name, lib);
                 }
             }
         }
+    } else {
+        error!("Path is not a directory");
+    }
+    if op_libs.num_libs() == 0 {
+        error!("Did not load any library");
     }
     op_libs
 }
@@ -167,6 +170,7 @@ async fn actor_control_loop(
 }
 
 #[cfg(not(feature = "dynop"))]
+#[tracing::instrument(skip(req, op_lib, local_actors, remote_actors, actor_contrl_tx))]
 async fn handle_job_req(
     req: JobControllerReq,
     op_lib: &OpLibrary,
@@ -175,6 +179,8 @@ async fn handle_job_req(
     actor_contrl_tx: &Sender<ControlReq>,
     port: u16,
 ) {
+    use tracing::{Level, event};
+
     match req {
         JobControllerReq::SpawnActor {
             addr,
@@ -183,7 +189,7 @@ async fn handle_job_req(
             lib_name,
             payload,
         } => {
-            log::info!("[Node] Spawing Actor {addr} with op: {op_name}");
+            event!(target: "serving spawn actor", Level::INFO, addr, op_name, lib_name, ?payload);
             let (control_tx, control_rx) = channel(20);
 
             let lib = op_lib.get_lib(&lib_name);
@@ -202,11 +208,12 @@ async fn handle_job_req(
                     .send(ControlInst::StartTcpRecv(port))
                     .await
                     .unwrap();
+                event!(target: "actor spawned", Level::INFO, port);
                 local_actors.insert(addr, LocalActor { handle: control_tx });
             }
         }
         JobControllerReq::RemoteActorAdded { addr, sock_addr } => {
-            log::info!("[Node] Remote Actor {addr} Added");
+            event!(target: "serving remote actor added", Level::INFO, addr, ?sock_addr);
             remote_actors.insert(
                 addr,
                 RemoteActor {
@@ -215,14 +222,16 @@ async fn handle_job_req(
             );
         }
         JobControllerReq::StopAllActors => {
+            event!(target: "serving stop all actors", Level::INFO, total_actors=local_actors.len());
             for (name, actor) in local_actors.drain() {
-                log::info!("[Node] Stopping Actor {name}");
+                event!(target: "stopping actor", Level::INFO, name);
                 actor.handle.send(ControlInst::Stop).await.unwrap();
             }
         }
     }
 }
 
+#[tracing::instrument(skip(local_actors, remote_actors, req))]
 async fn handle_actor_req(
     req: ControlReq,
     local_actors: &HashMap<ActorAddr, LocalActor>,
@@ -230,8 +239,9 @@ async fn handle_actor_req(
 ) {
     match req {
         ControlReq::Resolve { addr, resp_tx } => {
-            log::debug!("[Node] Resolving {addr}");
+            event!(target: "serving resolve addr", Level::INFO, addr);
             if let Some(local) = local_actors.get(addr) {
+                event!(target: "resolved", Level::INFO, addr="local");
                 let (write_half, read_half) = mpsc::channel(1 << 10);
                 local
                     .handle
@@ -240,12 +250,12 @@ async fn handle_actor_req(
                     .unwrap();
                 resp_tx.send(Connection::Local(write_half)).unwrap();
             } else if let Some(local) = remote_actors.get(addr) {
+                event!(target: "resolved", Level::INFO, addr=?local.remote_actor_addr);
                 resp_tx
                     .send(Connection::Remote(local.remote_actor_addr))
                     .unwrap();
-            } else if addr == "null" {
-                log::debug!("Received addr {addr}");
             } else {
+                error!("Couldn't Resolve {}", addr);
                 panic!("Couldn't Resolve {}", addr);
             }
         }
