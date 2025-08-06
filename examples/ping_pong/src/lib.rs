@@ -9,6 +9,8 @@ use reactor_macros::{DefaultPrio, Msg as DeriveMsg};
 use std::collections::HashMap;
 use std::time::Duration;
 
+#[cfg(feature = "chaos")]
+use rand::random;
 use log::info;
 
 // //////////////////////////////////////////////////////////////////////////////
