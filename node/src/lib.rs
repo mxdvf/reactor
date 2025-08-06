@@ -8,7 +8,7 @@ use tokio::sync::{
     mpsc::{self, Sender, UnboundedReceiver, channel, unbounded_channel},
     oneshot,
 };
-use tracing::{Level, error, event, info};
+use tracing::{Level, error, event};
 use tracing_shared::SharedLogger;
 // use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 

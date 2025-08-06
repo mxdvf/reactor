@@ -11,7 +11,7 @@ use std::time::Duration;
 
 #[cfg(feature = "chaos")]
 use rand::random;
-use log::{info, warn};
+use log::info;
 
 // //////////////////////////////////////////////////////////////////////////////
 //                                    MSG
