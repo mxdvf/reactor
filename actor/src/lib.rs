@@ -336,13 +336,14 @@ impl<R, P, S, IM, OM, MCD> BehaviourBuilder<R, P, S, IM, OM, MCD> {
         self
     }
 
-    pub fn generator_if<I>(
+    pub fn generator_if<I, F>(
         mut self,
         condition: bool,
-        generator_creator: fn() -> I,
+        generator_creator: F,
     ) -> BehaviourBuilder<R, P, S, IM, OM, MCD>
     where
         I: Iterator<Item = IM> + Send + 'static,
+        F: FnOnce() -> I,
     {
         if condition {
             self.generators.push(Box::new(generator_creator()));

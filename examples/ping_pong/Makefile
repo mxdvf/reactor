@@ -1,21 +1,32 @@
-install: install_node install_jobc build
-install_node:
-	cargo install --debug --path ../../generic_nctrl/
+.PHONY: install install_node install_jobc chaos kill_node node job clean
+	
+GENERIC_NCTRL = ../../generic_nctrl
+GENERIC_JCTRL = ../../generic_jctrl
+TARGET_SO = ../../target/debug/libping_pong_actor.so
 
-install_jobc:
-	cargo install --debug --path ../../generic_jctrl/
+install_node: $(GENERIC_NCTRL)
+	cargo install --debug --path $(GENERIC_NCTRL)
+
+install_jobc: $(GENERIC_JCTRL)
+	cargo install --debug --path $(GENERIC_JCTRL)
 
 chaos:
 	cargo build --features chaos
 
-build:
+$(TARGET_SO):
 	cargo build
 
 kill_node:
-	- kill $(lsof -ti :3000)
+	@echo "Killing process on port 3000 if any..."
+	@lsof -ti :3000 | xargs --no-run-if-empty kill
 
-node: kill_node
-	reactor_nctrl --port 3000 target/debug
+node: kill_node install_node $(TARGET_SO)
+	reactor_nctrl --port 3000 ../../target/debug
 	
-job:
-	reactor_jctrl ping_pong.toml
+job: install_jobc
+	reactor_jctrl ./ping_pong.toml
+
+clean:
+	cargo uninstall reactor_nctrl || true
+	cargo uninstall reactor_jctrl || true
+	cargo clean	

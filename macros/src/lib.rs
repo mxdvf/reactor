@@ -181,7 +181,6 @@ fn generate_enum(union: &UnionDef) -> TokenStream2 {
     let enum_def = quote! {
         #[derive(
             ::core::fmt::Debug,
-            ::core::cmp::PartialEq,
             ::core::clone::Clone,
             ::bincode::Encode,
             ::bincode::Decode,

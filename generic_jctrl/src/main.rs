@@ -83,6 +83,8 @@ port = 3000
   [[placement.ponger]]
   nodename = "node1"
   actor_name = "ponger"
+  connection = { hashed = ["addr1", "addr2"] }
+  op_args = { height = 1080, width = 1920, source = { type = "rtsp", url = "rtsp://example.com/stream" } }
 "#;
 
         let parsed: JobManifest = toml::from_str(toml_data).expect("Failed to parse");
@@ -112,7 +114,20 @@ port = 3000
                     vec![PhysicalOp {
                         nodename: "node1".into(),
                         actor_name: "ponger".into(),
-                        payload: HashMap::new(),
+                        payload: HashMap::from([
+                            (
+                                "connection".to_string(),
+                                json!({"hashed": ["addr1", "addr2"]}),
+                            ),
+                            (
+                                "op_args".to_string(),
+                                json!( {
+                                    "height": 1080,
+                                    "width":  1920,
+                                    "source": { "type": "rtsp", "url": "rtsp://example.com/stream" }
+                                } ),
+                            ),
+                        ]),
                     }],
                 ),
             ]),

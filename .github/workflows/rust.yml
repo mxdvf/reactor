@@ -35,7 +35,6 @@ jobs:
     - name: Run Ping Pong
       run: |
           cd examples/ping_pong
-          make install
           make node &
           sleep 1
           
@@ -49,7 +48,6 @@ jobs:
     - name: Run Read-Write Server
       run: |
           cd examples/read_write_server
-          make install
           make node &
           sleep 1
           

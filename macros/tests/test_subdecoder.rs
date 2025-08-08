@@ -83,6 +83,58 @@ mod tests {
            writer_decoder can decode WriteAck, ServerOut to WriterIn;
        ];
     }
+    impl PartialEq for ReaderIn {
+        fn eq(&self, other: &Self) -> bool {
+            match (self, other) {
+                (ReaderIn::ReadAck(read_ack), ReaderIn::ReadAck(read_ack2)) => {
+                    read_ack == read_ack2
+                }
+                (ReaderIn::GeneratorOut(generator_out), ReaderIn::GeneratorOut(generator_out2)) => {
+                    generator_out == generator_out2
+                }
+                _ => false,
+            }
+        }
+    }
+    impl PartialEq for WriterIn {
+        fn eq(&self, other: &Self) -> bool {
+            match (self, other) {
+                (WriterIn::WriteAck(write_ack), WriterIn::WriteAck(write_ack2)) => {
+                    write_ack == write_ack2
+                }
+                (WriterIn::GeneratorOut(generator_out), WriterIn::GeneratorOut(generator_out2)) => {
+                    generator_out == generator_out2
+                }
+                _ => false,
+            }
+        }
+    }
+    impl PartialEq for ServerIn {
+        fn eq(&self, other: &Self) -> bool {
+            match (self, other) {
+                (ServerIn::ReadOut(read_out), ServerIn::ReadOut(read_out2)) => {
+                    read_out == read_out2
+                }
+                (ServerIn::WriteOut(write_out), ServerIn::WriteOut(write_out2)) => {
+                    write_out == write_out2
+                }
+                _ => false,
+            }
+        }
+    }
+    impl PartialEq for ServerOut {
+        fn eq(&self, other: &Self) -> bool {
+            match (self, other) {
+                (ServerOut::ReadAck(read_ack), ServerOut::ReadAck(read_ack2)) => {
+                    read_ack == read_ack2
+                }
+                (ServerOut::WriteAck(write_ack), ServerOut::WriteAck(write_ack2)) => {
+                    write_ack == write_ack2
+                }
+                _ => false,
+            }
+        }
+    }
 
     #[test]
     fn test_coversion() {
