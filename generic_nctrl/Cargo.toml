@@ -11,6 +11,8 @@ reactor-node = { path = "../node" }
 reactor-inst = { path = "../instrument" }
 clap = { version = "4", features = ["derive"] }
 serde_json = "1.0.140"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
 
 [features]
 default = []

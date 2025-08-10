@@ -2,7 +2,7 @@
 	
 GENERIC_NCTRL = ../../generic_nctrl
 GENERIC_JCTRL = ../../generic_jctrl
-TARGET_SO = ../../target/debug/libping_pong_actor.so
+TARGET_SO = ../../target/debug/libread_write_server.so
 
 install_node: $(GENERIC_NCTRL)
 	cargo install --debug --path $(GENERIC_NCTRL)
@@ -24,7 +24,7 @@ node: kill_node install_node $(TARGET_SO)
 	reactor_nctrl --port 3000 ../../target/debug
 	
 job: install_jobc
-	reactor_jctrl ./ping_pong.toml
+	reactor_jctrl ./read_write.toml
 
 clean:
 	cargo uninstall reactor_nctrl || true

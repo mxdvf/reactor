@@ -1,3 +1,5 @@
+// #![feature(log_syntax)]
+
 use std::marker::PhantomData;
 
 use bincode::{Decode, Encode};
@@ -246,25 +248,38 @@ impl<M: Msg> ActorSend for NoOpActorSend<M> {
 /// - `send`: Optional sender logic implementing `ActorSend`.
 /// - `generators`: A list of internal message generators, producing messages of type `M`.
 ///
-pub struct Behaviour<R, P, S, M> {
+pub struct Behaviour<R, P, S, M: 'static, MCD> {
     recv: Option<R>,
     proc: P,
     send: Option<S>,
     generators: Vec<Box<dyn Iterator<Item = M> + Send>>,
     num_prios: u8,
+    master_codec: MCD,
+    sub_decoders: Option<SubDecoderStore<M>>,
+    receiver_should_adapt: bool,
 }
 
-pub struct BehaviourBuilder<R, P, S, IM, OM> {
+pub struct DecoderProvider<M> {
+    pub decoder_cons:
+        fn() -> Box<dyn tokio_util::codec::Decoder<Item = M, Error = std::io::Error> + Sync + Send>,
+    pub any_to_m: fn(Box<dyn std::any::Any>) -> M,
+}
+pub type SubDecoderStore<M> = fn(&str) -> Option<DecoderProvider<M>>;
+
+pub struct BehaviourBuilder<R, P, S, IM: 'static, OM, MCD> {
     recv: Option<R>,
     proc: P,
     send: Option<S>,
     generators: Vec<Box<dyn Iterator<Item = IM> + Send>>,
     num_prios: u8,
+    master_codec: MCD,
+    sub_decoders: Option<SubDecoderStore<IM>>,
+    ask_recver_to_adapt: bool,
     m: PhantomData<OM>,
 }
 
-impl<P, IM, OM> BehaviourBuilder<NoOpActorRecv<IM>, P, NoOpActorSend<OM>, IM, OM> {
-    pub fn new(proc: P) -> Self {
+impl<P, IM, OM, MCD> BehaviourBuilder<NoOpActorRecv<IM>, P, NoOpActorSend<OM>, IM, OM, MCD> {
+    pub fn new(proc: P, master_codec: MCD) -> Self {
         BehaviourBuilder {
             recv: None,
             proc,
@@ -272,12 +287,15 @@ impl<P, IM, OM> BehaviourBuilder<NoOpActorRecv<IM>, P, NoOpActorSend<OM>, IM, OM
             generators: vec![],
             num_prios: 1,
             m: PhantomData,
+            master_codec,
+            sub_decoders: None,
+            ask_recver_to_adapt: false,
         }
     }
 }
 
-impl<R, P, S, IM, OM> BehaviourBuilder<R, P, S, IM, OM> {
-    pub fn recv<R1>(self, recv: R1) -> BehaviourBuilder<R1, P, S, IM, OM>
+impl<R, P, S, IM, OM, MCD> BehaviourBuilder<R, P, S, IM, OM, MCD> {
+    pub fn recv<R1>(self, recv: R1) -> BehaviourBuilder<R1, P, S, IM, OM, MCD>
     where
         R1: ActorRecv<IMsg = IM>,
     {
@@ -288,9 +306,12 @@ impl<R, P, S, IM, OM> BehaviourBuilder<R, P, S, IM, OM> {
             generators: self.generators,
             num_prios: self.num_prios,
             m: self.m,
+            master_codec: self.master_codec,
+            sub_decoders: self.sub_decoders,
+            ask_recver_to_adapt: self.ask_recver_to_adapt,
         }
     }
-    pub fn send<S1>(self, send: S1) -> BehaviourBuilder<R, P, S1, IM, OM>
+    pub fn send<S1>(self, send: S1) -> BehaviourBuilder<R, P, S1, IM, OM, MCD>
     where
         S1: ActorSend<OMsg = OM>,
     {
@@ -301,10 +322,13 @@ impl<R, P, S, IM, OM> BehaviourBuilder<R, P, S, IM, OM> {
             generators: self.generators,
             num_prios: self.num_prios,
             m: self.m,
+            master_codec: self.master_codec,
+            sub_decoders: self.sub_decoders,
+            ask_recver_to_adapt: self.ask_recver_to_adapt,
         }
     }
 
-    pub fn generator<I>(mut self, generator: I) -> BehaviourBuilder<R, P, S, IM, OM>
+    pub fn generator<I>(mut self, generator: I) -> BehaviourBuilder<R, P, S, IM, OM, MCD>
     where
         I: Iterator<Item = IM> + Send + 'static,
     {
@@ -312,13 +336,14 @@ impl<R, P, S, IM, OM> BehaviourBuilder<R, P, S, IM, OM> {
         self
     }
 
-    pub fn generator_if<I>(
+    pub fn generator_if<I, F>(
         mut self,
         condition: bool,
-        generator_creator: fn() -> I,
-    ) -> BehaviourBuilder<R, P, S, IM, OM>
+        generator_creator: F,
+    ) -> BehaviourBuilder<R, P, S, IM, OM, MCD>
     where
         I: Iterator<Item = IM> + Send + 'static,
+        F: FnOnce() -> I,
     {
         if condition {
             self.generators.push(Box::new(generator_creator()));
@@ -326,23 +351,39 @@ impl<R, P, S, IM, OM> BehaviourBuilder<R, P, S, IM, OM> {
         self
     }
 
-    pub fn num_prios(mut self, num: u8) -> BehaviourBuilder<R, P, S, IM, OM> {
+    pub fn num_prios(mut self, num: u8) -> BehaviourBuilder<R, P, S, IM, OM, MCD> {
         self.num_prios = num;
         self
     }
 
-    pub fn build(self) -> Behaviour<R, P, S, IM> {
+    pub fn ask_receiver_to_adapt(mut self) -> BehaviourBuilder<R, P, S, IM, OM, MCD> {
+        self.ask_recver_to_adapt = true;
+        self
+    }
+
+    pub fn sub_decoders(
+        mut self,
+        decoders: SubDecoderStore<IM>,
+    ) -> BehaviourBuilder<R, P, S, IM, OM, MCD> {
+        self.sub_decoders = Some(decoders);
+        self
+    }
+
+    pub fn build(self) -> Behaviour<R, P, S, IM, MCD> {
         Behaviour {
             recv: self.recv,
             proc: self.proc,
             send: self.send,
             generators: self.generators,
             num_prios: self.num_prios,
+            master_codec: self.master_codec,
+            sub_decoders: self.sub_decoders,
+            receiver_should_adapt: self.ask_recver_to_adapt,
         }
     }
 }
 
-impl<R, P, S, M> Behaviour<R, P, S, M> {
+impl<R, P, S, M, MCD> Behaviour<R, P, S, M, MCD> {
     fn take_recv(&mut self) -> Option<R> {
         self.recv.take()
     }
@@ -365,23 +406,16 @@ impl RuntimeCtx {
     }
 }
 
-impl<R, P, S, IM, OM> Behaviour<R, P, S, IM>
+impl<R, P, S, IM, OM, MCD> Behaviour<R, P, S, IM, MCD>
 where
     IM: Msg,
     OM: Msg,
     R: ActorRecv<IMsg = IM>,
     P: ActorProcess<IMsg = IM, OMsg = OM>,
     S: ActorSend<OMsg = OM>,
+    MCD: Encoder<OM> + Decoder<Item = IM, Error = std::io::Error> + Send + Sync + Clone + 'static,
 {
-    pub async fn run<CD>(mut self, ctx: RuntimeCtx, codec: CD) -> Result<(), ActorError>
-    where
-        CD: Encoder<OM>
-            + Decoder<Item = IM, Error = std::io::Error>
-            + Send
-            + Sync
-            + Clone
-            + 'static,
-    {
+    pub async fn run(mut self, ctx: RuntimeCtx) -> Result<(), ActorError> {
         let my_addr = ctx.addr.to_string();
         let (p2s_tx, p2s_rx) = mpsc::unbounded_channel::<OM>();
         let (r2p_tx, mut r2p_rx) = reactor_channel::<R2PMsg<IM>>(self.num_prios, CHANNEL_SIZE);
@@ -405,7 +439,8 @@ where
             my_addr.clone().leak(),
             reciever,
             r2p_tx,
-            codec.clone(),
+            self.master_codec.clone(),
+            self.sub_decoders,
             controller_rx,
         ));
 
@@ -438,7 +473,14 @@ where
                 tracing::info!("[ACTOR][{}] Processor Ended", addr);
                 Ok(())
             });
-        let tx_handle = tokio::spawn(tx(my_addr.leak(), sender, p2s_rx, controller_tx, codec));
+        let tx_handle = tokio::spawn(tx(
+            my_addr.leak(),
+            sender,
+            self.receiver_should_adapt,
+            p2s_rx,
+            controller_tx,
+            self.master_codec,
+        ));
         rx_handle.await??;
         proc_handle.await??;
         tx_handle.await?;

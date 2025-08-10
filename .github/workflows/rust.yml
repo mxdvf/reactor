@@ -20,22 +20,34 @@ jobs:
     - name: Install Rust toolchain components
       run: rustup component add clippy rustfmt
 
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+
+    - name: Run Clippy
+      run: cargo clippy -- -D warnings
+
     - name: Build
       run: cargo build --verbose
 
     - name: Run tests
       run: cargo test --verbose
 
-    - name: Run Clippy
-      run: cargo clippy -- -D warnings
-
-    - name: Check formatting
-      run: cargo fmt --all -- --check
-
     - name: Run Ping Pong
       run: |
           cd examples/ping_pong
-          make install
+          make node &
+          sleep 1
+          
+          timeout 6s make job || echo "make job terminated after timeout"
+          status=$?
+          if [ $status -ne 0 ] && [ $status -ne 124 ]; then
+              echo "make job failed"
+              exit $status
+          fi
+
+    - name: Run Read-Write Server
+      run: |
+          cd examples/read_write_server
           make node &
           sleep 1
           

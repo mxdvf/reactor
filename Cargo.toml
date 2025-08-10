@@ -1,17 +1,19 @@
 [workspace]
 members = [
-    'generic_jctrl',
-    'actor',
-    'macros',
-    'node',
-    'generic_nctrl',
-		'instrument',
-		'examples/ping_pong',
-]
-exclude = [
-	'examples/ping_pong_with_codegen',
+    "actor",
+    "node",
+    "rpc_client",
+    "job_manager",
+    "generic_nctrl",
+    "generic_jctrl",
+    "macros",
+    "examples/ping_pong",
+    "examples/read_write_server",
 ]
 
+exclude = [
+    "examples/ping_pong_with_codegen"
+]
 resolver = "2"
 
 [workspace.package]

@@ -1510,6 +1510,7 @@ dependencies = [
  "bincode",
  "criterion",
  "futures",
+ "lazy_static",
  "log",
  "socket2 0.6.0",
  "thiserror",
@@ -1581,10 +1582,13 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "bytes",
+ "lazy_static",
+ "proc-macro2",
  "quote",
  "reactor-actor",
  "syn",
  "tokio-util",
+ "virtue",
 ]
 
 [[package]]
@@ -1633,6 +1637,23 @@ dependencies = [
  "reactor-node",
  "serde_json",
  "tokio",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "read_write_server"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "env_logger",
+ "lazy_static",
+ "log",
+ "rand",
+ "reactor-actor",
+ "reactor-macros",
+ "serde_json",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]

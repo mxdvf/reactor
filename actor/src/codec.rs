@@ -36,12 +36,13 @@ impl<E, D: bincode::Decode<()>> tokio_util::codec::Decoder for BincodeCodec<E, D
             Some(frame) => frame,
             None => return Ok(None),
         };
-        let (message, _) = bincode::decode_from_slice(&frame, self.config).map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Failed to decode length-delimited data",
-            )
-        })?;
+        let (message, _): (Self::Item, _) = bincode::decode_from_slice(&frame, self.config)
+            .map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Failed to decode length-delimited data",
+                )
+            })?;
         Ok(Some(message))
     }
 }
@@ -61,5 +62,50 @@ impl<E: bincode::Encode, D> tokio_util::codec::Encoder<E> for BincodeCodec<E, D>
                 )
             })?;
         Ok(())
+    }
+}
+
+#[derive(Clone)]
+pub struct BincodeSubdecoder<D, MD> {
+    config: bincode::config::Configuration,
+    length_codec: tokio_util::codec::LengthDelimitedCodec,
+    d: PhantomData<D>,
+    md: PhantomData<MD>,
+}
+impl<D, MD> Default for BincodeSubdecoder<D, MD> {
+    fn default() -> Self {
+        BincodeSubdecoder {
+            config: bincode::config::standard(),
+            length_codec: tokio_util::codec::LengthDelimitedCodec::builder()
+                .length_field_length(4)
+                .max_frame_length(u32::MAX as usize)
+                .new_codec(),
+            d: PhantomData,
+            md: PhantomData,
+        }
+    }
+}
+impl<MD: From<D>, D: bincode::Decode<()>> tokio_util::codec::Decoder for BincodeSubdecoder<D, MD> {
+    type Item = MD;
+    type Error = std::io::Error;
+
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        let frame = match self.length_codec.decode(src).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Failed to decode length-delimited data",
+            )
+        })? {
+            Some(frame) => frame,
+            None => return Ok(None),
+        };
+        let (message, _): (D, _) =
+            bincode::decode_from_slice(&frame, self.config).map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Failed to decode length-delimited data",
+                )
+            })?;
+        Ok(Some(message.into()))
     }
 }

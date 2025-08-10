@@ -650,22 +650,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
-name = "ping_pong_actor"
-version = "0.1.0"
-dependencies = [
- "bincode",
- "env_logger",
- "lazy_static",
- "log",
- "rand",
- "reactor-actor",
- "reactor-macros",
- "serde_json",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
 name = "plotters"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -817,6 +801,22 @@ dependencies = [
  "quote",
  "syn",
  "virtue",
+]
+
+[[package]]
+name = "read_write_server"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "env_logger",
+ "lazy_static",
+ "log",
+ "rand",
+ "reactor-actor",
+ "reactor-macros",
+ "serde_json",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
