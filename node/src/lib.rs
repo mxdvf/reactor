@@ -8,7 +8,7 @@ use tokio::sync::{
     mpsc::{self, Sender, UnboundedReceiver, channel, unbounded_channel},
     oneshot,
 };
-use tracing::{Level, error, event, info};
+use tracing::{Level, error, event};
 use tracing_shared::SharedLogger;
 // use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -93,8 +93,6 @@ pub async fn node_controller(port: u16, operator_dir: PathBuf) {
 
     server_handle.await.unwrap();
     control_loop.await.unwrap();
-
-    info!("[Node] Controller Ended");
 }
 
 #[cfg(not(feature = "dynop"))]

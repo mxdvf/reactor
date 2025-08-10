@@ -1,8 +1,8 @@
-.PHONY: install install_node install_jobc chaos kill_node node job clean
-	
 GENERIC_NCTRL = ../../generic_nctrl
 GENERIC_JCTRL = ../../generic_jctrl
 TARGET_SO = ../../target/debug/libread_write_server.so
+
+.PHONY: install install_node install_jobc chaos kill_node node job clean TARGET_SO
 
 install_node: $(GENERIC_NCTRL)
 	cargo install --debug --path $(GENERIC_NCTRL)
