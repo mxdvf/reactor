@@ -33,15 +33,15 @@ socket2 = { version = "0.6", features=["all"]}
 thiserror = "2.0"
 
 
+# I dont know what these do
+# [profile.profiling]
+# inherits = "release"
+# debug = true
+# opt-level = 0
+# codegen-units = 1
+# panic = "abort"
+# overflow-checks = true
+# lto = false
 
-[profile.profiling]
-inherits = "release"
-debug = true
-opt-level = 0
-codegen-units = 1
-panic = "abort"
-overflow-checks = true
-lto = false
-
-[build]
-rustflags = ["-C", "force-frame-pointers=yes"]
+# [build]
+# rustflags = ["-C", "force-frame-pointers=yes"]

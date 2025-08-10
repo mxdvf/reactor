@@ -4,7 +4,6 @@
 use clap::{Parser, arg};
 use reactor_node::node_controller;
 use std::path::PathBuf;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser)]
 #[command(name = "Node Controller", about = "Run reactor Node controller")]

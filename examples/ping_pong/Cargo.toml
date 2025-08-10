@@ -23,5 +23,3 @@ log = "0.4.27"
 
 [features]
 chaos = []
-
-# [workspace]
