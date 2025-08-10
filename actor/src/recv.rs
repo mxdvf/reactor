@@ -194,7 +194,7 @@ where
                         let decoder: Box<dyn tokio_util::codec::Decoder<Item = M, Error = std::io::Error> + Sync + Send> = (sub_decoders(&msg_type).unwrap().decoder_cons)();
                         let boxed_decoder = BoxedDecoder(decoder);
                         remote_recv_set.spawn(remote_parent_recv_subtask(
-                            remote_addr,
+                            std::borrow::Cow::Owned(remote_addr),
                             p_tx.clone(),
                             cstate.clone(),
                             FramedRead::new(rx, boxed_decoder),
@@ -205,7 +205,7 @@ where
                     }
                     _ => {
                         remote_recv_set.spawn(remote_parent_recv_subtask(
-                            remote_addr,
+                            std::borrow::Cow::Owned(remote_addr),
                             p_tx.clone(),
                             cstate.clone(),
                             FramedRead::new(rx, master_decoder.clone()),
@@ -243,7 +243,7 @@ async fn recv_remote_handshake(rx: &mut OwnedReadHalf) -> (String, Option<String
 }
 
 async fn remote_parent_recv_subtask<M, AR, D, RX>(
-    parent_addr: String,
+    parent_addr: ActorAddrRef<'static>,
     row_q: ReactorChannelTx<R2PMsg<M>>,
     cstate: Option<Arc<Mutex<AR>>>,
     mut framed_reader: FramedRead<RX, D>,
@@ -254,11 +254,11 @@ async fn remote_parent_recv_subtask<M, AR, D, RX>(
     M: Msg,
 {
     tracing::info!("[ACTOR] SubRx Started");
-    let parent_addr = parent_addr.leak();
+    // let parent_addr = parent_addr.leak();
     loop {
         if let Some(Ok(msg)) = framed_reader.next().await {
             if let Some(cstate) = cstate.as_ref() {
-                let action = cstate.lock().await.after_recv(parent_addr, &msg).await;
+                let action = cstate.lock().await.after_recv(&parent_addr, &msg).await;
                 match action {
                     ChannelAction::PASS => {}
                     ChannelAction::PANIC => {
