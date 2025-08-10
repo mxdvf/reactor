@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::reader::{ReadAck, ReadOut};
 use crate::writer::{WriteAck, WriteOut};
 use reactor_actor::SubDecoderStore;
@@ -30,7 +32,7 @@ impl reactor_actor::ActorProcess for Server {
 }
 
 impl ServerSender {
-    fn new(r_client_addrs: ActorAddrRef, w_client_addrs: ActorAddrRef) -> Self {
+    fn new(r_client_addrs: ActorAddrRef<'static>, w_client_addrs: ActorAddrRef<'static>) -> Self {
         ServerSender {
             read_client_addr: vec![r_client_addrs],
             write_client_addr: vec![w_client_addrs],
@@ -39,25 +41,26 @@ impl ServerSender {
 }
 
 struct ServerSender {
-    read_client_addr: Vec<ActorAddrRef>,
-    write_client_addr: Vec<ActorAddrRef>,
+    read_client_addr: Vec<ActorAddrRef<'static>>,
+    write_client_addr: Vec<ActorAddrRef<'static>>,
 }
 
 impl reactor_actor::ActorSend for ServerSender {
     type OMsg = ServerOut;
 
-    async fn before_send(&mut self, output: &Self::OMsg) -> &Vec<ActorAddrRef> {
+    async fn before_send<'a>(&'a mut self, output: &Self::OMsg) -> Cow<'a, [ActorAddrRef<'a>]> {
         match output {
             ServerOut::WriteAck(_) => &self.write_client_addr,
             ServerOut::ReadAck(_) => &self.read_client_addr,
         }
+        .into()
     }
 }
 
 pub(crate) async fn server(
     ctx: RuntimeCtx,
-    reader_addr: ActorAddrRef,
-    writer_addr: ActorAddrRef,
+    reader_addr: ActorAddrRef<'static>,
+    writer_addr: ActorAddrRef<'static>,
     decoder: SubDecoderStore<ServerIn>,
 ) {
     BehaviourBuilder::new(Server {}, BincodeCodec::default())

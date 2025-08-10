@@ -1,6 +1,6 @@
 // #![feature(log_syntax)]
 
-use std::marker::PhantomData;
+use std::{borrow::Cow, marker::PhantomData};
 
 use bincode::{Decode, Encode};
 use err::ActorError;
@@ -31,7 +31,7 @@ static CHANNEL_SIZE: usize = 1 << 20;
 pub trait Msg: Send + Sync + std::fmt::Debug + HasPriority + 'static + Clone {}
 
 /// Addr of the actors
-pub type ActorAddrRef = &'static str;
+pub type ActorAddrRef<'a> = Cow<'a, str>;
 pub type ActorAddr = String;
 
 #[derive(Encode, Decode, Debug, Clone)]
@@ -127,9 +127,9 @@ pub trait ActorRecv: Send + 'static {
     /// - `input`: A reference to the message that was received.
     ///
     /// It returns [`ChannelAction`] that determines how the actor should proceed.
-    fn after_recv(
-        &mut self,
-        worker_id: ActorAddrRef,
+    fn after_recv<'a>(
+        &'a mut self,
+        worker_id: &str,
         input: &Self::IMsg,
     ) -> impl std::future::Future<Output = ChannelAction> + Send;
 }
@@ -139,7 +139,7 @@ pub struct NoOpActorRecv<M> {
 }
 impl<M: Msg> ActorRecv for NoOpActorRecv<M> {
     type IMsg = M;
-    async fn after_recv(&mut self, _addr: ActorAddrRef, _input: &Self::IMsg) -> ChannelAction {
+    async fn after_recv<'a>(&'a mut self, _addr: &str, _input: &Self::IMsg) -> ChannelAction {
         panic!("This Shouldn't be used")
     }
 }
@@ -217,7 +217,7 @@ pub trait ActorSend: Send + 'static {
     fn before_send<'a>(
         &'a mut self,
         output: &Self::OMsg,
-    ) -> impl std::future::Future<Output = &'a Vec<ActorAddrRef>> + Send;
+    ) -> impl std::future::Future<Output = Cow<'a, [ActorAddrRef<'a>]>> + Send;
 }
 pub struct NoOpActorSend<M> {
     m: PhantomData<M>,
@@ -225,7 +225,7 @@ pub struct NoOpActorSend<M> {
 impl<M: Msg> ActorSend for NoOpActorSend<M> {
     type OMsg = M;
 
-    async fn before_send(&mut self, _output: &Self::OMsg) -> &Vec<ActorAddrRef> {
+    async fn before_send<'a>(&'a mut self, _output: &Self::OMsg) -> Cow<'a, [ActorAddrRef<'a>]> {
         panic!("This Shouldn't be used")
     }
 }
@@ -396,12 +396,12 @@ impl<R, P, S, M, MCD> Behaviour<R, P, S, M, MCD> {
 }
 
 pub struct RuntimeCtx {
-    pub addr: ActorAddrRef,
+    pub addr: ActorAddrRef<'static>,
     pub node_comm: NodeComm,
 }
 
 impl RuntimeCtx {
-    pub fn new(addr: ActorAddrRef, node_comm: NodeComm) -> Self {
+    pub fn new(addr: ActorAddrRef<'static>, node_comm: NodeComm) -> Self {
         RuntimeCtx { addr, node_comm }
     }
 }
@@ -416,7 +416,7 @@ where
     MCD: Encoder<OM> + Decoder<Item = IM, Error = std::io::Error> + Send + Sync + Clone + 'static,
 {
     pub async fn run(mut self, ctx: RuntimeCtx) -> Result<(), ActorError> {
-        let my_addr = ctx.addr.to_string();
+        // let my_addr = ctx.addr.to_string();
         let (p2s_tx, p2s_rx) = mpsc::unbounded_channel::<OM>();
         let (r2p_tx, mut r2p_rx) = reactor_channel::<R2PMsg<IM>>(self.num_prios, CHANNEL_SIZE);
 
@@ -436,7 +436,7 @@ where
             .collect();
 
         let rx_handle = tokio::spawn(rx(
-            my_addr.clone().leak(),
+            ctx.addr.clone(),
             reciever,
             r2p_tx,
             self.master_codec.clone(),
@@ -444,10 +444,10 @@ where
             controller_rx,
         ));
 
-        let addr = my_addr.clone();
+        let _addr = ctx.addr.clone();
         let proc_handle: JoinHandle<Result<(), ActorError>> =
             tokio::task::spawn_blocking(move || -> Result<(), ActorError> {
-                tracing::info!("[ACTOR][{}] Processor Started", addr);
+                tracing::info!("[ACTOR][{}] Processor Started", _addr);
                 loop {
                     match r2p_rx.recv() {
                         Some(R2PMsg::Msg(m)) => {
@@ -470,11 +470,11 @@ where
                         }
                     }
                 }
-                tracing::info!("[ACTOR][{}] Processor Ended", addr);
+                tracing::info!("[ACTOR][{}] Processor Ended", _addr);
                 Ok(())
             });
         let tx_handle = tokio::spawn(tx(
-            my_addr.leak(),
+            ctx.addr.clone(),
             sender,
             self.receiver_should_adapt,
             p2s_rx,

@@ -10,14 +10,14 @@ use tokio::{
 use tokio_util::codec::{Encoder, FramedWrite};
 
 use crate::{
-    ActorAddrRef, ActorSend, Msg,
+    ActorAddr, ActorAddrRef, ActorSend, Msg,
     node_comm::{Connection, ControlReq},
 };
 
 #[allow(clippy::type_complexity)]
 pub(crate) async fn tx<M, E, BS>(
-    my_addr: ActorAddrRef,
-    mut before_send: Option<BS>,
+    my_addr: ActorAddrRef<'static>,
+    before_send: Option<BS>,
     ask_receiver_to_adapt: bool,
     mut p_rx: mpsc::UnboundedReceiver<M>,
     controller_tx: mpsc::Sender<ControlReq>,
@@ -27,38 +27,83 @@ pub(crate) async fn tx<M, E, BS>(
     BS: ActorSend<OMsg = M>,
     E: Encoder<M> + 'static + Send + Clone,
 {
-    let mut addr_to_buff: HashMap<ActorAddrRef, mpsc::UnboundedSender<M>> = HashMap::new();
+    let mut addr_to_buff: HashMap<ActorAddr, mpsc::UnboundedSender<M>> = HashMap::new();
     let mut sub_senders = JoinSet::new();
     tracing::info!("[ACTOR][{}] Tx Started", my_addr);
-    while let Some(m) = p_rx.recv().await {
-        let addrs = match before_send.as_mut() {
-            Some(before_send) => before_send.before_send(&m).await,
-            None => &vec![],
-        };
-        for addr in addrs {
-            let sender = addr_to_buff.entry(addr).or_insert_with(|| {
-                let (tx, rx) = mpsc::unbounded_channel::<M>();
-                sub_senders.spawn(sender_task(
-                    my_addr,
+
+    if let Some(mut before_send) = before_send {
+        while let Some(m) = p_rx.recv().await {
+            let receivers: &[std::borrow::Cow<'_, str>] = &(*(before_send.before_send(&m).await));
+            let num_receivers = receivers.len();
+            if num_receivers == 0 {
+                continue;
+            }
+            for addr in &receivers[..num_receivers - 1] {
+                let addr: &str = &**addr;
+                send_msg(
+                    &my_addr,
                     ask_receiver_to_adapt,
-                    addr,
-                    rx,
-                    codec.clone(),
                     controller_tx.clone(),
-                ));
-                tx
-            });
-            let _ = sender.send(m.clone());
+                    codec.clone(),
+                    &mut addr_to_buff,
+                    &mut sub_senders,
+                    addr,
+                    m.clone(),
+                );
+            }
+            send_msg(
+                &my_addr,
+                ask_receiver_to_adapt,
+                controller_tx.clone(),
+                codec.clone(),
+                &mut addr_to_buff,
+                &mut sub_senders,
+                &*receivers[num_receivers - 1],
+                m,
+            );
         }
+    } else {
+        while let Some(_) = p_rx.recv().await {}
     }
     sub_senders.abort_all();
     tracing::info!("[ACTOR][{}] Tx Ended", my_addr);
 }
 
-async fn sender_task<M, E>(
-    my_addr: ActorAddrRef,
+#[inline(always)]
+fn send_msg<M, E>(
+    my_addr: &std::borrow::Cow<'static, str>,
     ask_receiver_to_adapt: bool,
-    send_addr: ActorAddrRef,
+    controller_tx: mpsc::Sender<ControlReq>,
+    codec: E,
+    addr_to_buff: &mut HashMap<String, mpsc::UnboundedSender<M>>,
+    sub_senders: &mut JoinSet<()>,
+    addr: &str,
+    m: M,
+) where
+    M: Msg,
+    E: Encoder<M> + 'static + Send + Clone,
+{
+    if let Some(sender) = addr_to_buff.get(addr) {
+        let _ = sender.send(m);
+    } else {
+        let (tx, rx) = mpsc::unbounded_channel::<M>();
+        sub_senders.spawn(sender_task(
+            my_addr.clone(),
+            ask_receiver_to_adapt,
+            (*addr).to_string(),
+            rx,
+            codec,
+            controller_tx,
+        ));
+        let _ = tx.send(m);
+        addr_to_buff.insert(addr.to_string(), tx);
+    }
+}
+
+async fn sender_task<M, E>(
+    my_addr: ActorAddrRef<'static>,
+    ask_receiver_to_adapt: bool,
+    send_addr: ActorAddr,
     rx: mpsc::UnboundedReceiver<M>,
     encoder: E,
     controller_tx: mpsc::Sender<ControlReq>,
@@ -67,7 +112,7 @@ async fn sender_task<M, E>(
     E: Encoder<M> + 'static + Send,
 {
     async fn remote_sender<C: Encoder<M> + 'static + Send, M>(
-        my_addr: ActorAddrRef,
+        my_addr: ActorAddrRef<'static>,
         ask_receiver_to_adapt: bool,
         mut tx: impl AsyncWrite + Unpin,
         mut rx: mpsc::UnboundedReceiver<M>,
@@ -76,7 +121,7 @@ async fn sender_task<M, E>(
         log::info!("[ACTOR] SubTx Started");
         let decoder_name = std::any::type_name::<M>().to_string();
         println!("{decoder_name} {ask_receiver_to_adapt}");
-        send_remote_handshake(&mut tx, my_addr, decoder_name, ask_receiver_to_adapt).await;
+        send_remote_handshake(&mut tx, &*my_addr, decoder_name, ask_receiver_to_adapt).await;
         let mut framed_writer = FramedWrite::new(tx, encoder);
         loop {
             if let Some(msg) = rx.recv().await {
@@ -89,14 +134,14 @@ async fn sender_task<M, E>(
     }
 
     async fn local_sender<M: std::fmt::Debug + Send + 'static + Clone>(
-        my_addr: ActorAddrRef,
+        my_addr: ActorAddrRef<'static>,
         ask_receiver_to_adapt: bool,
         tx: mpsc::Sender<Box<dyn Any + Send>>,
         mut rx: mpsc::UnboundedReceiver<M>,
     ) {
         log::info!("[ACTOR] SubTx Started (Local)");
         let decoder_name = std::any::type_name::<M>().to_string();
-        send_local_handshake(&tx, my_addr, decoder_name, ask_receiver_to_adapt).await;
+        send_local_handshake(&tx, &*my_addr, decoder_name, ask_receiver_to_adapt).await;
         loop {
             if let Some(msg) = rx.recv().await {
                 if tx.send(Box::new(msg)).await.is_err() {

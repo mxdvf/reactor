@@ -47,7 +47,7 @@ impl reactor_actor::ActorProcess for WriteClient {
 
 pub(crate) async fn writer(
     ctx: RuntimeCtx,
-    server_addr: ActorAddrRef,
+    server_addr: ActorAddrRef<'static>,
     decoder: SubDecoderStore<WriterIn>,
 ) {
     BehaviourBuilder::new(WriteClient {}, BincodeCodec::default())

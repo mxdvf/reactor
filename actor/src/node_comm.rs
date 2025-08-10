@@ -2,7 +2,7 @@ use std::{any::Any, net::SocketAddr};
 
 use tokio::sync::{mpsc, oneshot};
 
-use crate::ActorAddrRef;
+use crate::ActorAddr;
 
 /// Type of channel that is used to send message from one local actor to the other.
 pub type LocalChannelTx = mpsc::Sender<Box<dyn Any + Send>>;
@@ -16,7 +16,7 @@ pub enum Connection {
 
 pub enum ControlReq {
     Resolve {
-        addr: ActorAddrRef,
+        addr: ActorAddr,
         resp_tx: oneshot::Sender<Connection>,
     },
 }

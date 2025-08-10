@@ -56,7 +56,7 @@ where
 }
 
 pub fn sender_task<M, C>(
-    addr: ActorAddrRef,
+    addr: ActorAddrRef<'static>,
     rx: mpsc::UnboundedReceiver<M>,
     encoder: C,
     controller_tx: mpsc::Sender<ControlReq>,
@@ -100,7 +100,7 @@ where
         let (c_tx, c_rx) = tokio::sync::oneshot::channel();
         controller_tx
             .send(ControlReq::Resolve {
-                addr,
+                addr: (*addr).to_string(),
                 resp_tx: c_tx,
             })
             .await

@@ -13,6 +13,7 @@ use crate::server::server as server_behaviour;
 use crate::writer::{WriteAck, WriteOut, writer as writer_behaviour};
 use reactor_actor::RuntimeCtx;
 use reactor_macros::msg_converter;
+use std::borrow::Cow;
 use std::collections::HashMap;
 // //////////////////////////////////////////////////////////////////////////////
 //                                    MSG
@@ -36,32 +37,52 @@ lazy_static::lazy_static! {
 
 #[unsafe(no_mangle)]
 fn server(ctx: RuntimeCtx, mut payload: HashMap<String, serde_json::Value>) {
-    let reader_addr = payload.remove("reader_addr").unwrap();
-    let writer_addr = payload.remove("writer_addr").unwrap();
+    let reader_addr = payload
+        .remove("reader_addr")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string();
+    let writer_addr = payload
+        .remove("writer_addr")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string();
     RUNTIME.spawn(server_behaviour(
         ctx,
-        reader_addr.as_str().unwrap().to_string().leak(),
-        writer_addr.as_str().unwrap().to_string().leak(),
+        Cow::Owned(reader_addr),
+        Cow::Owned(writer_addr),
         server_decoder,
     ));
 }
 
 #[unsafe(no_mangle)]
 fn writer(ctx: RuntimeCtx, mut payload: HashMap<String, serde_json::Value>) {
-    let server_addr = payload.remove("server_addr").unwrap();
+    let server_addr = payload
+        .remove("server_addr")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string();
     RUNTIME.spawn(writer_behaviour(
         ctx,
-        server_addr.as_str().unwrap().to_string().leak(),
+        Cow::Owned(server_addr),
         writer_decoder,
     ));
 }
 
 #[unsafe(no_mangle)]
 fn reader(ctx: RuntimeCtx, mut payload: HashMap<String, serde_json::Value>) {
-    let server_addr = payload.remove("server_addr").unwrap();
+    let server_addr = payload
+        .remove("server_addr")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string();
     RUNTIME.spawn(reader_behaviour(
         ctx,
-        server_addr.as_str().unwrap().to_string().leak(),
+        Cow::Owned(server_addr),
         reader_decoder,
     ));
 }

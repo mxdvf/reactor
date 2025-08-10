@@ -6,6 +6,7 @@ use reactor_actor::RuntimeCtx;
 use reactor_actor::codec::BincodeCodec;
 use reactor_actor::{ActorAddrRef, BehaviourBuilder};
 use reactor_macros::{DefaultPrio, Msg as DeriveMsg};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -42,7 +43,7 @@ impl reactor_actor::ActorProcess for Processor {
 //                                  Sender
 // //////////////////////////////////////////////////////////////////////////////
 struct Sender {
-    other_addr: Vec<ActorAddrRef>,
+    other_addr: Vec<ActorAddrRef<'static>>,
 
     #[cfg(feature = "chaos")]
     drop: Vec<ActorAddrRef>,
@@ -50,7 +51,7 @@ struct Sender {
 impl reactor_actor::ActorSend for Sender {
     type OMsg = PingPongMsg;
 
-    async fn before_send(&mut self, _output: &Self::OMsg) -> &Vec<ActorAddrRef> {
+    async fn before_send<'a>(&'a mut self, _output: &Self::OMsg) -> Cow<'a, [ActorAddrRef<'a>]> {
         #[cfg(feature = "chaos")]
         {
             let b: bool = random();
@@ -59,11 +60,11 @@ impl reactor_actor::ActorSend for Sender {
                 return &self.drop;
             }
         }
-        &self.other_addr
+        (&self.other_addr).into()
     }
 }
 impl Sender {
-    fn new(other_actor: ActorAddrRef) -> Self {
+    fn new(other_actor: ActorAddrRef<'static>) -> Self {
         Sender {
             other_addr: vec![other_actor],
             #[cfg(feature = "chaos")]
@@ -76,7 +77,7 @@ impl Sender {
 //                                ACTORS
 // //////////////////////////////////////////////////////////////////////////////
 
-pub async fn actor(ctx: RuntimeCtx, other_addr: ActorAddrRef) {
+pub async fn actor(ctx: RuntimeCtx, other_addr: ActorAddrRef<'static>) {
     BehaviourBuilder::new(Processor {}, BincodeCodec::default())
         .send(Sender::new(other_addr))
         .generator_if(ctx.addr == "pinger", || vec![PingPongMsg::Ping].into_iter())
@@ -92,6 +93,11 @@ lazy_static::lazy_static! {
 
 #[unsafe(no_mangle)]
 pub fn pingpong(ctx: RuntimeCtx, mut payload: HashMap<String, serde_json::Value>) {
-    let other = payload.remove("other").unwrap();
-    RUNTIME.spawn(actor(ctx, other.as_str().unwrap().to_string().leak()));
+    let other: String = payload
+        .remove("other")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string();
+    RUNTIME.spawn(actor(ctx, Cow::Owned(other)));
 }

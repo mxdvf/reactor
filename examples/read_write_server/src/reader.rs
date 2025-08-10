@@ -46,7 +46,7 @@ impl reactor_actor::ActorProcess for ReadClient {
 
 pub(crate) async fn reader(
     ctx: RuntimeCtx,
-    server_addr: ActorAddrRef,
+    server_addr: ActorAddrRef<'static>,
     decoder: SubDecoderStore<ReaderIn>,
 ) {
     BehaviourBuilder::new(ReadClient {}, BincodeCodec::default())
