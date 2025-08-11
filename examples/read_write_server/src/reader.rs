@@ -2,7 +2,7 @@ use crate::ServerOut;
 use crate::client_utils::{ClientSender, GeneratorOut};
 use reactor_actor::SubDecoderStore;
 use reactor_actor::codec::BincodeCodec;
-use reactor_actor::{ActorAddrRef, BehaviourBuilder, RuntimeCtx};
+use reactor_actor::{BehaviourBuilder, RuntimeCtx};
 use reactor_macros::Msg as DeriveMsg;
 use reactor_macros::{DefaultPrio, msg_converter};
 
@@ -38,6 +38,7 @@ impl reactor_actor::ActorProcess for ReadClient {
                 vec![]
             }
             ReaderIn::GeneratorOut(_) => {
+                log::info!("Read sent");
                 vec![ReadOut]
             }
         }
@@ -46,7 +47,7 @@ impl reactor_actor::ActorProcess for ReadClient {
 
 pub(crate) async fn reader(
     ctx: RuntimeCtx,
-    server_addr: ActorAddrRef<'static>,
+    server_addr: String,
     decoder: SubDecoderStore<ReaderIn>,
 ) {
     BehaviourBuilder::new(ReadClient {}, BincodeCodec::default())

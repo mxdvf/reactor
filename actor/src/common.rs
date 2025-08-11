@@ -14,7 +14,7 @@ use tokio::{
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 
 use crate::{
-    ActorAddrRef, Msg,
+    Msg,
     node_comm::{Connection, ControlReq},
 };
 
@@ -56,7 +56,7 @@ where
 }
 
 pub fn sender_task<M, C>(
-    addr: ActorAddrRef<'static>,
+    addr: &'static str,
     rx: mpsc::UnboundedReceiver<M>,
     encoder: C,
     controller_tx: mpsc::Sender<ControlReq>,

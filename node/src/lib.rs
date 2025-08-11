@@ -201,7 +201,7 @@ async fn handle_job_req(
                 let op: libloading::Symbol<ActorSpawnCB> = lib.get(op_name.as_bytes()).unwrap();
                 op(
                     RuntimeCtx::new(
-                        std::borrow::Cow::Owned(addr.clone()),
+                        addr.clone().leak(),
                         NodeComm::new(control_rx, actor_contrl_tx.clone()),
                     ),
                     payload,

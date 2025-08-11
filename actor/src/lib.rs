@@ -31,16 +31,16 @@ static CHANNEL_SIZE: usize = 1 << 20;
 pub trait Msg: Send + Sync + std::fmt::Debug + HasPriority + 'static + Clone {}
 
 /// Addr of the actors
-pub type ActorAddrRef<'a> = Cow<'a, str>;
 pub type ActorAddr = String;
 
-pub struct ActorAddrs<'a>(Cow<'a, [ActorAddrRef<'a>]>);
+#[derive(Clone)]
+pub struct ActorAddrs<'a>(Cow<'a, [String]>);
 impl<'a> ActorAddrs<'a> {
-    pub fn borrowed(slice: &'a [ActorAddrRef<'a>]) -> Self {
+    pub fn borrowed(slice: &'a [String]) -> Self {
         ActorAddrs(Cow::Borrowed(slice))
     }
 
-    pub fn owned(vec: Vec<ActorAddrRef<'a>>) -> Self {
+    pub fn owned(vec: Vec<String>) -> Self {
         ActorAddrs(Cow::Owned(vec))
     }
 
@@ -48,17 +48,17 @@ impl<'a> ActorAddrs<'a> {
     where
         I: IntoIterator<Item = String>,
     {
-        let vec: Vec<Cow<'a, str>> = iter.into_iter().map(Cow::Owned).collect();
+        let vec: Vec<String> = iter.into_iter().collect();
         ActorAddrs(Cow::Owned(vec))
     }
 
-    pub fn as_slice(&self) -> &[Cow<'a, str>] {
+    pub fn as_slice(&self) -> &[String] {
         &self.0
     }
 }
 
-impl<'a> std::ops::Deref for ActorAddrs<'a> {
-    type Target = [Cow<'a, str>];
+impl std::ops::Deref for ActorAddrs<'_> {
+    type Target = [String];
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -158,8 +158,8 @@ pub trait ActorRecv: Send + 'static {
     /// - `input`: A reference to the message that was received.
     ///
     /// It returns [`ChannelAction`] that determines how the actor should proceed.
-    fn after_recv<'a>(
-        &'a mut self,
+    fn after_recv(
+        &mut self,
         worker_id: &str,
         input: &Self::IMsg,
     ) -> impl std::future::Future<Output = ChannelAction> + Send;
@@ -170,7 +170,7 @@ pub struct NoOpActorRecv<M> {
 }
 impl<M: Msg> ActorRecv for NoOpActorRecv<M> {
     type IMsg = M;
-    async fn after_recv<'a>(&'a mut self, _addr: &str, _input: &Self::IMsg) -> ChannelAction {
+    async fn after_recv(&mut self, _addr: &str, _input: &Self::IMsg) -> ChannelAction {
         panic!("This Shouldn't be used")
     }
 }
@@ -426,13 +426,14 @@ impl<R, P, S, M, MCD> Behaviour<R, P, S, M, MCD> {
     }
 }
 
+#[derive(Debug)]
 pub struct RuntimeCtx {
-    pub addr: ActorAddrRef<'static>,
+    pub addr: &'static str,
     pub node_comm: NodeComm,
 }
 
 impl RuntimeCtx {
-    pub fn new(addr: ActorAddrRef<'static>, node_comm: NodeComm) -> Self {
+    pub fn new(addr: &'static str, node_comm: NodeComm) -> Self {
         RuntimeCtx { addr, node_comm }
     }
 }
@@ -467,7 +468,7 @@ where
             .collect();
 
         let rx_handle = tokio::spawn(rx(
-            ctx.addr.clone(),
+            ctx.addr,
             reciever,
             r2p_tx,
             self.master_codec.clone(),
@@ -475,7 +476,7 @@ where
             controller_rx,
         ));
 
-        let _addr = ctx.addr.clone();
+        let _addr = ctx.addr;
         let proc_handle: JoinHandle<Result<(), ActorError>> =
             tokio::task::spawn_blocking(move || -> Result<(), ActorError> {
                 tracing::info!("[ACTOR][{}] Processor Started", _addr);
@@ -505,7 +506,7 @@ where
                 Ok(())
             });
         let tx_handle = tokio::spawn(tx(
-            ctx.addr.clone(),
+            ctx.addr,
             sender,
             self.receiver_should_adapt,
             p2s_rx,

@@ -17,7 +17,7 @@ use tokio_util::{
 };
 
 use crate::{
-    ActorAddrRef, ActorRecv, ChannelAction, Msg, R2PMsg, SubDecoderStore,
+    ActorRecv, ChannelAction, Msg, R2PMsg, SubDecoderStore,
     err::{ActorError, RecieverErr},
     node_comm::{ControlInst, LocalChannelRx},
     reactor_channel::ReactorChannelTx,
@@ -80,7 +80,7 @@ fn any_to_m<M: 'static>(msg: Box<dyn std::any::Any>) -> M {
 ///   decode them, and forward them for processing based on channel state.
 ///
 pub(crate) async fn rx<M, AR, D>(
-    my_addr: ActorAddrRef<'static>,
+    my_addr: &'static str,
     reciever: Option<AR>,
     p_tx: ReactorChannelTx<R2PMsg<M>>,
     decoder: D,
@@ -115,7 +115,6 @@ where
                 let (addr, msg_type) = *(addr.downcast::<(String, Option<String>)>().unwrap());
                 let msg_transform = match (sub_decoders, msg_type) {
                     (Some(sub_decoders), Some(msg_type)) => {
-                        println!("{msg_type}");
                         sub_decoders(&msg_type).unwrap().any_to_m
                     }
                     _ => any_to_m,
@@ -195,7 +194,7 @@ where
                         let decoder: Box<dyn tokio_util::codec::Decoder<Item = M, Error = std::io::Error> + Sync + Send> = (sub_decoders(&msg_type).unwrap().decoder_cons)();
                         let boxed_decoder = BoxedDecoder(decoder);
                         remote_recv_set.spawn(remote_parent_recv_subtask(
-                            std::borrow::Cow::Owned(remote_addr),
+                            remote_addr,
                             p_tx.clone(),
                             cstate.clone(),
                             FramedRead::new(rx, boxed_decoder),
@@ -206,7 +205,7 @@ where
                     }
                     _ => {
                         remote_recv_set.spawn(remote_parent_recv_subtask(
-                            std::borrow::Cow::Owned(remote_addr),
+                            remote_addr,
                             p_tx.clone(),
                             cstate.clone(),
                             FramedRead::new(rx, master_decoder.clone()),
@@ -244,7 +243,7 @@ async fn recv_remote_handshake(rx: &mut OwnedReadHalf) -> (String, Option<String
 }
 
 async fn remote_parent_recv_subtask<M, AR, D, RX>(
-    parent_addr: ActorAddrRef<'static>,
+    parent_addr: String,
     row_q: ReactorChannelTx<R2PMsg<M>>,
     cstate: Option<Arc<Mutex<AR>>>,
     mut framed_reader: FramedRead<RX, D>,

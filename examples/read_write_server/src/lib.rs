@@ -13,7 +13,6 @@ use crate::server::server as server_behaviour;
 use crate::writer::{WriteAck, WriteOut, writer as writer_behaviour};
 use reactor_actor::RuntimeCtx;
 use reactor_macros::msg_converter;
-use std::borrow::Cow;
 use std::collections::HashMap;
 // //////////////////////////////////////////////////////////////////////////////
 //                                    MSG
@@ -51,8 +50,8 @@ fn server(ctx: RuntimeCtx, mut payload: HashMap<String, serde_json::Value>) {
         .to_string();
     RUNTIME.spawn(server_behaviour(
         ctx,
-        Cow::Owned(reader_addr),
-        Cow::Owned(writer_addr),
+        reader_addr,
+        writer_addr,
         server_decoder,
     ));
 }
@@ -65,11 +64,7 @@ fn writer(ctx: RuntimeCtx, mut payload: HashMap<String, serde_json::Value>) {
         .as_str()
         .unwrap()
         .to_string();
-    RUNTIME.spawn(writer_behaviour(
-        ctx,
-        Cow::Owned(server_addr),
-        writer_decoder,
-    ));
+    RUNTIME.spawn(writer_behaviour(ctx, server_addr, writer_decoder));
 }
 
 #[unsafe(no_mangle)]
@@ -80,9 +75,5 @@ fn reader(ctx: RuntimeCtx, mut payload: HashMap<String, serde_json::Value>) {
         .as_str()
         .unwrap()
         .to_string();
-    RUNTIME.spawn(reader_behaviour(
-        ctx,
-        Cow::Owned(server_addr),
-        reader_decoder,
-    ));
+    RUNTIME.spawn(reader_behaviour(ctx, server_addr, reader_decoder));
 }

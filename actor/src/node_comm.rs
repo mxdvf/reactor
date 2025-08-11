@@ -28,6 +28,7 @@ pub enum ControlInst {
     Stop,
 }
 
+#[derive(Debug)]
 pub struct NodeComm {
     pub controller_rx: mpsc::Receiver<ControlInst>,
     pub controller_tx: mpsc::Sender<ControlReq>,
