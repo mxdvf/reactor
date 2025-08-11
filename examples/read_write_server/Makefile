@@ -13,14 +13,12 @@ install_jobc: $(GENERIC_JCTRL)
 chaos:
 	cargo build --features chaos
 
-$(TARGET_SO):
-	cargo build
-
 kill_node:
 	@echo "Killing process on port 3000 if any..."
 	@lsof -ti :3000 | xargs --no-run-if-empty kill
 
-node: kill_node install_node $(TARGET_SO)
+node: kill_node install_node
+	cargo build
 	reactor_nctrl --port 3000 ../../target/debug
 	
 job: install_jobc

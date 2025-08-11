@@ -263,16 +263,17 @@ mod tests {
     async fn test_priority_order_stress() {
         let (tx, mut rx) = priority_channel::<R2PMsg<TestMsg>>(3, 10000);
 
+        let origin = "origin";
         for _ in 0..10000 {
-            tx.send(R2PMsg::Msg(TestMsg::Low)).await.unwrap();
+            tx.send(R2PMsg::Msg(TestMsg::Low, origin)).await.unwrap();
         }
-        tx.send(R2PMsg::Msg(TestMsg::Medium)).await.unwrap();
-        tx.send(R2PMsg::Msg(TestMsg::High)).await.unwrap();
+        tx.send(R2PMsg::Msg(TestMsg::Medium, origin)).await.unwrap();
+        tx.send(R2PMsg::Msg(TestMsg::High, origin)).await.unwrap();
 
-        assert_eq!(rx.try_recv(), Ok(R2PMsg::Msg(TestMsg::High)));
-        assert_eq!(rx.try_recv(), Ok(R2PMsg::Msg(TestMsg::Medium)));
+        assert_eq!(rx.try_recv(), Ok(R2PMsg::Msg(TestMsg::High, origin)));
+        assert_eq!(rx.try_recv(), Ok(R2PMsg::Msg(TestMsg::Medium, origin)));
         for _ in 0..10000 {
-            assert_eq!(rx.try_recv(), Ok(R2PMsg::Msg(TestMsg::Low)));
+            assert_eq!(rx.try_recv(), Ok(R2PMsg::Msg(TestMsg::Low, origin)));
         }
         assert_eq!(rx.try_recv(), Err(TryRecvError::Empty));
     }
@@ -280,14 +281,15 @@ mod tests {
     #[tokio::test]
     async fn test_priority_order() {
         let (tx, mut rx) = priority_channel::<R2PMsg<TestMsg>>(3, 100);
+        let origin = "origin";
 
-        tx.send(R2PMsg::Msg(TestMsg::Low)).await.unwrap();
-        tx.send(R2PMsg::Msg(TestMsg::Medium)).await.unwrap();
-        tx.send(R2PMsg::Msg(TestMsg::High)).await.unwrap();
+        tx.send(R2PMsg::Msg(TestMsg::Low, origin)).await.unwrap();
+        tx.send(R2PMsg::Msg(TestMsg::Medium, origin)).await.unwrap();
+        tx.send(R2PMsg::Msg(TestMsg::High, origin)).await.unwrap();
 
-        assert_eq!(rx.try_recv(), Ok(R2PMsg::Msg(TestMsg::High)));
-        assert_eq!(rx.try_recv(), Ok(R2PMsg::Msg(TestMsg::Medium)));
-        assert_eq!(rx.try_recv(), Ok(R2PMsg::Msg(TestMsg::Low)));
+        assert_eq!(rx.try_recv(), Ok(R2PMsg::Msg(TestMsg::High, origin)));
+        assert_eq!(rx.try_recv(), Ok(R2PMsg::Msg(TestMsg::Medium, origin)));
+        assert_eq!(rx.try_recv(), Ok(R2PMsg::Msg(TestMsg::Low, origin)));
         assert_eq!(rx.try_recv(), Err(TryRecvError::Empty));
     }
 
@@ -302,11 +304,13 @@ mod tests {
     #[tokio::test]
     async fn test_exit_message() {
         let (tx, mut rx) = priority_channel::<R2PMsg<TestMsg>>(3, 100);
+        let origin = "origin";
+
         tx.send(R2PMsg::Exit).await.unwrap();
-        tx.send(R2PMsg::Msg(TestMsg::Medium)).await.unwrap();
+        tx.send(R2PMsg::Msg(TestMsg::Medium, origin)).await.unwrap();
 
         assert_eq!(rx.try_recv(), Ok(R2PMsg::Exit));
-        assert_eq!(rx.try_recv(), Ok(R2PMsg::Msg(TestMsg::Medium)));
+        assert_eq!(rx.try_recv(), Ok(R2PMsg::Msg(TestMsg::Medium, origin)));
     }
 
     #[tokio::test]
@@ -330,14 +334,15 @@ mod tests {
     #[tokio::test]
     async fn test_partial_disconnect_behavior() {
         let (mut tx, mut rx) = priority_channel::<R2PMsg<TestMsg>>(3, 100);
+        let origin = "origin";
 
         tx.remove_prio();
 
-        tx.send(R2PMsg::Msg(TestMsg::High)).await.unwrap();
-        assert_eq!(rx.try_recv(), Ok(R2PMsg::Msg(TestMsg::High)));
-        tx.send(R2PMsg::Msg(TestMsg::Medium)).await.unwrap();
-        assert_eq!(rx.try_recv(), Ok(R2PMsg::Msg(TestMsg::Medium)));
-        let msg = R2PMsg::Msg(TestMsg::Low);
+        tx.send(R2PMsg::Msg(TestMsg::High, origin)).await.unwrap();
+        assert_eq!(rx.try_recv(), Ok(R2PMsg::Msg(TestMsg::High, origin)));
+        tx.send(R2PMsg::Msg(TestMsg::Medium, origin)).await.unwrap();
+        assert_eq!(rx.try_recv(), Ok(R2PMsg::Msg(TestMsg::Medium, origin)));
+        let msg = R2PMsg::Msg(TestMsg::Low, origin);
         match tx.send(msg.clone()).await {
             Ok(_) => panic!(),
             Err(send_err) => {

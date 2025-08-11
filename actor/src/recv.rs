@@ -17,7 +17,7 @@ use tokio_util::{
 };
 
 use crate::{
-    ActorAddrRef, ActorRecv, ChannelAction, Msg, R2PMsg, SubDecoderStore,
+    ActorRecv, ChannelAction, Msg, R2PMsg, SubDecoderStore,
     err::{ActorError, RecieverErr},
     node_comm::{ControlInst, LocalChannelRx},
     reactor_channel::ReactorChannelTx,
@@ -80,7 +80,7 @@ fn any_to_m<M: 'static>(msg: Box<dyn std::any::Any>) -> M {
 ///   decode them, and forward them for processing based on channel state.
 ///
 pub(crate) async fn rx<M, AR, D>(
-    my_addr: ActorAddrRef,
+    my_addr: &'static str,
     reciever: Option<AR>,
     p_tx: ReactorChannelTx<R2PMsg<M>>,
     decoder: D,
@@ -115,7 +115,6 @@ where
                 let (addr, msg_type) = *(addr.downcast::<(String, Option<String>)>().unwrap());
                 let msg_transform = match (sub_decoders, msg_type) {
                     (Some(sub_decoders), Some(msg_type)) => {
-                        println!("{msg_type}");
                         sub_decoders(&msg_type).unwrap().any_to_m
                     }
                     _ => any_to_m,
@@ -189,6 +188,7 @@ where
                 // Whenever an actor connects it first needs to tell us its
                 // address, and message type.
                 let (remote_addr, msg_type) = recv_remote_handshake(&mut rx).await;
+
                 match (sub_decoders, msg_type){
                     (Some(sub_decoders), Some(msg_type)) => {
                         let decoder: Box<dyn tokio_util::codec::Decoder<Item = M, Error = std::io::Error> + Sync + Send> = (sub_decoders(&msg_type).unwrap().decoder_cons)();
@@ -272,10 +272,10 @@ async fn remote_parent_recv_subtask<M, AR, D, RX>(
                         break;
                     }
                 }
-                if row_q.send(R2PMsg::Msg(msg)).await.is_err() {
+                if row_q.send(R2PMsg::Msg(msg, parent_addr)).await.is_err() {
                     break;
                 }
-            } else if row_q.send(R2PMsg::Msg(msg)).await.is_err() {
+            } else if row_q.send(R2PMsg::Msg(msg, parent_addr)).await.is_err() {
                 break;
             }
         }
@@ -315,10 +315,10 @@ async fn local_parent_recv_subtask<M, AR>(
                         break;
                     }
                 }
-                if row_q.send(R2PMsg::Msg(msg.clone())).await.is_err() {
+                if row_q.send(R2PMsg::Msg(msg, parent_addr)).await.is_err() {
                     break;
                 }
-            } else if row_q.send(R2PMsg::Msg(msg.clone())).await.is_err() {
+            } else if row_q.send(R2PMsg::Msg(msg, parent_addr)).await.is_err() {
                 break;
             }
         }

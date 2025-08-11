@@ -35,33 +35,28 @@ lazy_static::lazy_static! {
 }
 
 #[unsafe(no_mangle)]
-fn server(ctx: RuntimeCtx, mut payload: HashMap<String, serde_json::Value>) {
-    let reader_addr = payload.remove("reader_addr").unwrap();
-    let writer_addr = payload.remove("writer_addr").unwrap();
-    RUNTIME.spawn(server_behaviour(
-        ctx,
-        reader_addr.as_str().unwrap().to_string().leak(),
-        writer_addr.as_str().unwrap().to_string().leak(),
-        server_decoder,
-    ));
+fn server(ctx: RuntimeCtx, _payload: HashMap<String, serde_json::Value>) {
+    RUNTIME.spawn(server_behaviour(ctx, server_decoder));
 }
 
 #[unsafe(no_mangle)]
 fn writer(ctx: RuntimeCtx, mut payload: HashMap<String, serde_json::Value>) {
-    let server_addr = payload.remove("server_addr").unwrap();
-    RUNTIME.spawn(writer_behaviour(
-        ctx,
-        server_addr.as_str().unwrap().to_string().leak(),
-        writer_decoder,
-    ));
+    let server_addr = payload
+        .remove("server_addr")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string();
+    RUNTIME.spawn(writer_behaviour(ctx, server_addr, writer_decoder));
 }
 
 #[unsafe(no_mangle)]
 fn reader(ctx: RuntimeCtx, mut payload: HashMap<String, serde_json::Value>) {
-    let server_addr = payload.remove("server_addr").unwrap();
-    RUNTIME.spawn(reader_behaviour(
-        ctx,
-        server_addr.as_str().unwrap().to_string().leak(),
-        reader_decoder,
-    ));
+    let server_addr = payload
+        .remove("server_addr")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string();
+    RUNTIME.spawn(reader_behaviour(ctx, server_addr, reader_decoder));
 }

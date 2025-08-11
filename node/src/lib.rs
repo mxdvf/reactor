@@ -33,7 +33,7 @@ pub type ActorSpawnCB = fn(RuntimeCtx, HashMap<String, serde_json::Value>);
 
 pub type SetupSharedLogger = fn(SharedLogger);
 
-type ActorAddr = &'static str;
+type ActorAddr = String;
 type LibName = String;
 
 #[derive(Debug)]
@@ -198,7 +198,10 @@ async fn handle_job_req(
                 shared_logger(logger);
                 let op: libloading::Symbol<ActorSpawnCB> = lib.get(op_name.as_bytes()).unwrap();
                 op(
-                    RuntimeCtx::new(addr, NodeComm::new(control_rx, actor_contrl_tx.clone())),
+                    RuntimeCtx::new(
+                        addr.clone().leak(),
+                        NodeComm::new(control_rx, actor_contrl_tx.clone()),
+                    ),
                     payload,
                 );
                 resp_tx.send(Some(SpawnResult { port })).unwrap();
@@ -238,7 +241,7 @@ async fn handle_actor_req(
     match req {
         ControlReq::Resolve { addr, resp_tx } => {
             event!(target: "serving resolve addr", Level::INFO, addr);
-            if let Some(local) = local_actors.get(addr) {
+            if let Some(local) = local_actors.get(&addr) {
                 event!(target: "resolved", Level::INFO, addr="local");
                 let (write_half, read_half) = mpsc::channel(1 << 10);
                 local
@@ -247,7 +250,7 @@ async fn handle_actor_req(
                     .await
                     .unwrap();
                 resp_tx.send(Connection::Local(write_half)).unwrap();
-            } else if let Some(local) = remote_actors.get(addr) {
+            } else if let Some(local) = remote_actors.get(&addr) {
                 event!(target: "resolved", Level::INFO, addr=?local.remote_actor_addr);
                 resp_tx
                     .send(Connection::Remote(local.remote_actor_addr))

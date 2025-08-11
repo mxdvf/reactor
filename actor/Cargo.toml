@@ -25,6 +25,8 @@ criterion = "0.6.0"
 lazy_static = "1.5.0"
 tokio-util.workspace = true
 bincode.workspace = true
+bumpalo = "3.19.0"
+criterion = "0.6.0"
 
 
 [features]

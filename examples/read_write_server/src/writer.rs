@@ -3,7 +3,7 @@ use crate::client_utils::GeneratorOut;
 use crate::server::ServerOut;
 use reactor_actor::SubDecoderStore;
 use reactor_actor::codec::BincodeCodec;
-use reactor_actor::{ActorAddrRef, BehaviourBuilder, RuntimeCtx};
+use reactor_actor::{BehaviourBuilder, RuntimeCtx};
 use reactor_macros::DefaultPrio;
 use reactor_macros::Msg as DeriveMsg;
 use reactor_macros::msg_converter;
@@ -39,6 +39,7 @@ impl reactor_actor::ActorProcess for WriteClient {
                 vec![]
             }
             WriterIn::GeneratorOut(_) => {
+                log::info!("Write sent");
                 vec![WriteOut]
             }
         }
@@ -47,7 +48,7 @@ impl reactor_actor::ActorProcess for WriteClient {
 
 pub(crate) async fn writer(
     ctx: RuntimeCtx,
-    server_addr: ActorAddrRef,
+    server_addr: String,
     decoder: SubDecoderStore<WriterIn>,
 ) {
     BehaviourBuilder::new(WriteClient {}, BincodeCodec::default())

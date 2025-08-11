@@ -1,4 +1,9 @@
-use std::{collections::HashMap, net::IpAddr, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
 
 use axum::{
     Json, Router,
@@ -111,7 +116,7 @@ async fn start_actor(
         .clone()
         .tx
         .send(JobControllerReq::SpawnActor {
-            addr: args.actor_name.clone().leak(),
+            addr: args.actor_name.clone(),
             resp_tx: tx,
             op_name: args.operator_name,
             lib_name: args.lib_name,
@@ -183,7 +188,7 @@ async fn actor_added(
         .clone()
         .tx
         .send(JobControllerReq::RemoteActorAdded {
-            addr: actor_info.name.leak(),
+            addr: actor_info.name,
             sock_addr: SocketAddr::new(remote_ip, actor_info.port),
         })
         .unwrap();
