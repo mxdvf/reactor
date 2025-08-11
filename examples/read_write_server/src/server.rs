@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use crate::reader::{ReadAck, ReadOut};
 use crate::writer::{WriteAck, WriteOut};
 use reactor_actor::codec::BincodeCodec;

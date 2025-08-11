@@ -194,7 +194,7 @@ where
                         let decoder: Box<dyn tokio_util::codec::Decoder<Item = M, Error = std::io::Error> + Sync + Send> = (sub_decoders(&msg_type).unwrap().decoder_cons)();
                         let boxed_decoder = BoxedDecoder(decoder);
                         remote_recv_set.spawn(remote_parent_recv_subtask(
-                            std::borrow::Cow::Owned(remote_addr),
+                            remote_addr,
                             p_tx.clone(),
                             cstate.clone(),
                             FramedRead::new(rx, boxed_decoder),
@@ -205,7 +205,7 @@ where
                     }
                     _ => {
                         remote_recv_set.spawn(remote_parent_recv_subtask(
-                            std::borrow::Cow::Owned(remote_addr),
+                            remote_addr,
                             p_tx.clone(),
                             cstate.clone(),
                             FramedRead::new(rx, master_decoder.clone()),
@@ -243,7 +243,7 @@ async fn recv_remote_handshake(rx: &mut OwnedReadHalf) -> (String, Option<String
 }
 
 async fn remote_parent_recv_subtask<M, AR, D, RX>(
-    parent_addr: ActorAddrRef<'static>,
+    parent_addr: String,
     row_q: ReactorChannelTx<R2PMsg<M>>,
     cstate: Option<Arc<Mutex<AR>>>,
     mut framed_reader: FramedRead<RX, D>,

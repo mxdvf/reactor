@@ -165,7 +165,7 @@ async fn sender_task<M, E>(
     ) {
         log::info!("[ACTOR] SubTx Started (Local)");
         let decoder_name = std::any::type_name::<M>().to_string();
-        send_local_handshake(&tx, &*my_addr, decoder_name, ask_receiver_to_adapt).await;
+        send_local_handshake(&tx, my_addr, decoder_name, ask_receiver_to_adapt).await;
         loop {
             if let Some(msg) = rx.recv().await {
                 if tx.send(Box::new(msg)).await.is_err() {
