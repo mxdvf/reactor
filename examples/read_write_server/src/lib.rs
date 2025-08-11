@@ -35,25 +35,8 @@ lazy_static::lazy_static! {
 }
 
 #[unsafe(no_mangle)]
-fn server(ctx: RuntimeCtx, mut payload: HashMap<String, serde_json::Value>) {
-    let reader_addr = payload
-        .remove("reader_addr")
-        .unwrap()
-        .as_str()
-        .unwrap()
-        .to_string();
-    let writer_addr = payload
-        .remove("writer_addr")
-        .unwrap()
-        .as_str()
-        .unwrap()
-        .to_string();
-    RUNTIME.spawn(server_behaviour(
-        ctx,
-        reader_addr,
-        writer_addr,
-        server_decoder,
-    ));
+fn server(ctx: RuntimeCtx, _payload: HashMap<String, serde_json::Value>) {
+    RUNTIME.spawn(server_behaviour(ctx, server_decoder));
 }
 
 #[unsafe(no_mangle)]

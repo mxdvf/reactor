@@ -1,8 +1,8 @@
 use crate::reader::{ReadAck, ReadOut};
 use crate::writer::{WriteAck, WriteOut};
 use reactor_actor::codec::BincodeCodec;
-use reactor_actor::{ActorAddrs, SubDecoderStore};
 use reactor_actor::{BehaviourBuilder, RuntimeCtx};
+use reactor_actor::{RouteTo, SubDecoderStore};
 use reactor_macros::msg_converter;
 
 msg_converter! {
@@ -30,38 +30,24 @@ impl reactor_actor::ActorProcess for Server {
 }
 
 impl ServerSender {
-    fn new(r_client_addrs: String, w_client_addrs: String) -> Self {
-        ServerSender {
-            read_client_addr: vec![r_client_addrs],
-            write_client_addr: vec![w_client_addrs],
-        }
+    fn new() -> Self {
+        ServerSender {}
     }
 }
 
-struct ServerSender {
-    read_client_addr: Vec<String>,
-    write_client_addr: Vec<String>,
-}
+struct ServerSender;
 
 impl reactor_actor::ActorSend for ServerSender {
     type OMsg = ServerOut;
 
-    async fn before_send<'a>(&'a mut self, output: &Self::OMsg) -> ActorAddrs<'a> {
-        ActorAddrs::borrowed(match output {
-            ServerOut::WriteAck(_) => &self.write_client_addr,
-            ServerOut::ReadAck(_) => &self.read_client_addr,
-        })
+    async fn before_send(&mut self, _output: &Self::OMsg) -> RouteTo {
+        RouteTo::Reply
     }
 }
 
-pub(crate) async fn server(
-    ctx: RuntimeCtx,
-    reader_addr: String,
-    writer_addr: String,
-    decoder: SubDecoderStore<ServerIn>,
-) {
+pub(crate) async fn server(ctx: RuntimeCtx, decoder: SubDecoderStore<ServerIn>) {
     BehaviourBuilder::new(Server {}, BincodeCodec::default())
-        .send(ServerSender::new(reader_addr, writer_addr))
+        .send(ServerSender::new())
         .sub_decoders(decoder)
         .ask_receiver_to_adapt()
         .build()

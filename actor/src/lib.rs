@@ -33,35 +33,63 @@ pub trait Msg: Send + Sync + std::fmt::Debug + HasPriority + 'static + Clone {}
 /// Addr of the actors
 pub type ActorAddr = String;
 
-#[derive(Clone)]
-pub struct ActorAddrs<'a>(Cow<'a, [String]>);
-impl<'a> ActorAddrs<'a> {
-    pub fn borrowed(slice: &'a [String]) -> Self {
-        ActorAddrs(Cow::Borrowed(slice))
-    }
+/// Represents the routing target of a message in the system.
+///
+/// `RouteTo` is used to specify where a message should be sent. It supports
+/// multiple routing strategies:
+///
+/// - `Blackhole`: Drop the message silently without sending it.
+/// - `Reply`: Route the message back to the original sender (used in request-reply patterns).
+/// - `Single`: Route the message to a single actor by address.
+/// - `Multiple`: Route the message to multiple addresses of actors.
+///
+/// The `'a` lifetime allows `RouteTo` to borrow from external string data
+/// when possible, avoiding allocations when routing with references.
+pub enum RouteTo<'a> {
+    /// Drop the message; it will not be sent to any actor.
+    Blackhole,
+    /// Send the message back to the sender.
+    Reply,
+    /// Route to a single actor by address (either borrowed or owned).
+    Single(Cow<'a, str>),
+    /// Route to multiple actors by addresses (either borrowed or owned).
+    Multiple(Cow<'a, [String]>),
+}
 
-    pub fn owned(vec: Vec<String>) -> Self {
-        ActorAddrs(Cow::Owned(vec))
-    }
-
-    pub fn from_strings<I>(iter: I) -> Self
-    where
-        I: IntoIterator<Item = String>,
-    {
-        let vec: Vec<String> = iter.into_iter().collect();
-        ActorAddrs(Cow::Owned(vec))
-    }
-
-    pub fn as_slice(&self) -> &[String] {
-        &self.0
+/// Converts a borrowed `&str` into a `RouteTo::Single` with borrowed data.
+/// Usage:
+///      RouteTo::from("addr".to_string());
+impl From<String> for RouteTo<'_> {
+    fn from(value: String) -> Self {
+        RouteTo::Single(Cow::Owned(value))
     }
 }
 
-impl std::ops::Deref for ActorAddrs<'_> {
-    type Target = [String];
+/// Converts a borrowed `&str` into a `RouteTo::Single` with borrowed data.
+/// Usage:
+///      RouteTo::from(&self.other_addr.as_str());    // other_addr: String
+impl<'a> From<&'a str> for RouteTo<'a> {
+    fn from(value: &'a str) -> Self {
+        RouteTo::Single(Cow::Borrowed(value))
+    }
+}
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
+/// Converts a `Vec<String>` into a `RouteTo::Multiple` with owned address list.
+/// Usage:
+///      let x = vec!["addr1".to_string];
+///      RouteTo::from(x);
+impl From<Vec<String>> for RouteTo<'_> {
+    fn from(value: Vec<String>) -> Self {
+        RouteTo::Multiple(Cow::Owned(value))
+    }
+}
+
+/// Converts a borrowed slice of `String`s into a `RouteTo::Multiple`.
+/// Usage:
+///      RouteTo::from(self.addrs.as_slice());  // addrs: Vec<String>
+impl<'a> From<&'a [String]> for RouteTo<'a> {
+    fn from(value: &'a [String]) -> Self {
+        RouteTo::Multiple(Cow::Borrowed(value))
     }
 }
 
@@ -103,7 +131,7 @@ pub enum ChannelAction {
 
 #[derive(Debug)]
 enum R2PMsg<T> {
-    Msg(T),
+    Msg(T, &'static str),
     Exit,
     #[allow(dead_code)]
     AddPrio(mpsc::Receiver<R2PMsg<T>>),
@@ -114,7 +142,7 @@ enum R2PMsg<T> {
 impl<T: Clone> Clone for R2PMsg<T> {
     fn clone(&self) -> Self {
         match self {
-            R2PMsg::Msg(m) => R2PMsg::Msg(m.clone()),
+            R2PMsg::Msg(m, origin) => R2PMsg::Msg(m.clone(), origin),
             _ => panic!("Shouldn't Clone this"),
         }
     }
@@ -123,7 +151,7 @@ impl<T: PartialEq> PartialEq for R2PMsg<T> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (R2PMsg::AddPrio(_), _) => panic!("Can't Compare"),
-            (R2PMsg::Msg(m1), R2PMsg::Msg(m2)) => m1.eq(m2),
+            (R2PMsg::Msg(m1, _), R2PMsg::Msg(m2, _)) => m1.eq(m2),
             (R2PMsg::Exit, R2PMsg::Exit) => true,
             _ => false,
         }
@@ -133,7 +161,7 @@ impl<T: PartialEq> PartialEq for R2PMsg<T> {
 impl<T: HasPriority> HasPriority for R2PMsg<T> {
     fn priority(&self) -> usize {
         match self {
-            R2PMsg::Msg(t) => t.priority(),
+            R2PMsg::Msg(t, _) => t.priority(),
             R2PMsg::Exit => MAX_PRIO,
             R2PMsg::AddPrio(_) => MAX_PRIO,
             R2PMsg::RemoveLowPrio => MAX_PRIO,
@@ -248,7 +276,7 @@ pub trait ActorSend: Send + 'static {
     fn before_send<'a>(
         &'a mut self,
         output: &Self::OMsg,
-    ) -> impl std::future::Future<Output = ActorAddrs<'a>> + Send;
+    ) -> impl std::future::Future<Output = RouteTo<'a>> + Send;
 }
 pub struct NoOpActorSend<M> {
     m: PhantomData<M>,
@@ -256,7 +284,7 @@ pub struct NoOpActorSend<M> {
 impl<M: Msg> ActorSend for NoOpActorSend<M> {
     type OMsg = M;
 
-    async fn before_send<'a>(&'a mut self, _output: &Self::OMsg) -> ActorAddrs<'a> {
+    async fn before_send<'a>(&'a mut self, _output: &Self::OMsg) -> RouteTo<'a> {
         panic!("This Shouldn't be used")
     }
 }
@@ -449,7 +477,7 @@ where
 {
     pub async fn run(mut self, ctx: RuntimeCtx) -> Result<(), ActorError> {
         // let my_addr = ctx.addr.to_string();
-        let (p2s_tx, p2s_rx) = mpsc::unbounded_channel::<OM>();
+        let (p2s_tx, p2s_rx) = mpsc::unbounded_channel::<(OM, &'static str)>();
         let (r2p_tx, mut r2p_rx) = reactor_channel::<R2PMsg<IM>>(self.num_prios, CHANNEL_SIZE);
 
         let (controller_rx, controller_tx) = ctx.node_comm.split();
@@ -482,10 +510,10 @@ where
                 tracing::info!("[ACTOR][{}] Processor Started", _addr);
                 loop {
                     match r2p_rx.recv() {
-                        Some(R2PMsg::Msg(m)) => {
+                        Some(R2PMsg::Msg(m, origin)) => {
                             let processed = processor.process(m);
                             for o in processed {
-                                p2s_tx.send(o).map_err(|_| ActorError::P2SErr)?;
+                                p2s_tx.send((o, origin)).map_err(|_| ActorError::P2SErr)?;
                             }
                         }
                         Some(R2PMsg::AddPrio(new_rx)) => {
@@ -527,7 +555,7 @@ where
     M: Msg + 'static,
 {
     for m in generator {
-        p_tx.send(R2PMsg::Msg(m)).await.unwrap();
+        p_tx.send(R2PMsg::Msg(m, "")).await.unwrap();
     }
     Ok(())
 }

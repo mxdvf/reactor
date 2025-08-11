@@ -10,7 +10,7 @@ use tokio::{
 use tokio_util::codec::{Encoder, FramedWrite};
 
 use crate::{
-    ActorAddr, ActorAddrs, ActorSend, Msg,
+    ActorAddr, ActorSend, Msg, RouteTo,
     node_comm::{Connection, ControlReq},
 };
 
@@ -19,7 +19,7 @@ pub(crate) async fn tx<M, E, BS>(
     my_addr: &'static str,
     before_send: Option<BS>,
     ask_receiver_to_adapt: bool,
-    mut p_rx: mpsc::UnboundedReceiver<M>,
+    mut p_rx: mpsc::UnboundedReceiver<(M, &'static str)>,
     controller_tx: mpsc::Sender<ControlReq>,
     codec: E,
 ) where
@@ -32,34 +32,59 @@ pub(crate) async fn tx<M, E, BS>(
     tracing::info!("[ACTOR][{}] Tx Started", my_addr);
 
     if let Some(mut before_send) = before_send {
-        while let Some(m) = p_rx.recv().await {
-            let receivers: ActorAddrs<'_> = before_send.before_send(&m).await;
-            let num_receivers = receivers.len();
-            if num_receivers == 0 {
-                continue;
-            }
-            for addr in &receivers[..num_receivers - 1] {
-                send_msg(
+        while let Some((m, origin)) = p_rx.recv().await {
+            let receivers: RouteTo<'_> = before_send.before_send(&m).await;
+            match receivers {
+                RouteTo::Blackhole => {}
+                RouteTo::Reply => send_msg(
                     my_addr,
                     ask_receiver_to_adapt,
                     controller_tx.clone(),
                     codec.clone(),
                     &mut addr_to_buff,
                     &mut sub_senders,
-                    addr,
-                    m.clone(),
-                );
+                    origin,
+                    m,
+                ),
+                RouteTo::Single(send_to) => send_msg(
+                    my_addr,
+                    ask_receiver_to_adapt,
+                    controller_tx.clone(),
+                    codec.clone(),
+                    &mut addr_to_buff,
+                    &mut sub_senders,
+                    &send_to,
+                    m,
+                ),
+                RouteTo::Multiple(receivers) => {
+                    let num_receivers = receivers.len();
+                    if num_receivers == 0 {
+                        continue;
+                    }
+                    for addr in &receivers[..num_receivers - 1] {
+                        send_msg(
+                            my_addr,
+                            ask_receiver_to_adapt,
+                            controller_tx.clone(),
+                            codec.clone(),
+                            &mut addr_to_buff,
+                            &mut sub_senders,
+                            addr,
+                            m.clone(),
+                        );
+                    }
+                    send_msg(
+                        my_addr,
+                        ask_receiver_to_adapt,
+                        controller_tx.clone(),
+                        codec.clone(),
+                        &mut addr_to_buff,
+                        &mut sub_senders,
+                        &receivers[num_receivers - 1],
+                        m,
+                    );
+                }
             }
-            send_msg(
-                my_addr,
-                ask_receiver_to_adapt,
-                controller_tx.clone(),
-                codec.clone(),
-                &mut addr_to_buff,
-                &mut sub_senders,
-                &receivers[num_receivers - 1],
-                m,
-            );
         }
     } else {
         while p_rx.recv().await.is_some() {}

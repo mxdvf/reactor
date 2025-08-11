@@ -2,9 +2,9 @@ pub use reactor_actor::setup_shared_logger_ref;
 
 use bincode::{Decode, Encode};
 
-use reactor_actor::BehaviourBuilder;
+use reactor_actor::RuntimeCtx;
 use reactor_actor::codec::BincodeCodec;
-use reactor_actor::{ActorAddrs, RuntimeCtx};
+use reactor_actor::{BehaviourBuilder, RouteTo};
 use reactor_macros::{DefaultPrio, Msg as DeriveMsg};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -42,7 +42,7 @@ impl reactor_actor::ActorProcess for Processor {
 //                                  Sender
 // //////////////////////////////////////////////////////////////////////////////
 struct Sender {
-    other_addr: Vec<String>,
+    other_addr: String,
 
     #[cfg(feature = "chaos")]
     drop: Vec<ActorAddrRef>,
@@ -50,7 +50,7 @@ struct Sender {
 impl reactor_actor::ActorSend for Sender {
     type OMsg = PingPongMsg;
 
-    async fn before_send<'a>(&'a mut self, _output: &Self::OMsg) -> ActorAddrs<'a> {
+    async fn before_send<'a>(&'a mut self, _output: &Self::OMsg) -> RouteTo<'a> {
         #[cfg(feature = "chaos")]
         {
             let b: bool = random();
@@ -59,13 +59,13 @@ impl reactor_actor::ActorSend for Sender {
                 return &self.drop;
             }
         }
-        ActorAddrs::borrowed(&self.other_addr)
+        RouteTo::from(self.other_addr.as_str())
     }
 }
 impl Sender {
     fn new(other_actor: String) -> Self {
         Sender {
-            other_addr: vec![other_actor],
+            other_addr: other_actor,
             #[cfg(feature = "chaos")]
             drop: vec![],
         }

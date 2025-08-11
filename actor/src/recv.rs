@@ -254,11 +254,11 @@ async fn remote_parent_recv_subtask<M, AR, D, RX>(
     M: Msg,
 {
     tracing::info!("[ACTOR] SubRx Started");
-    // let parent_addr = parent_addr.leak();
+    let parent_addr = parent_addr.leak();
     loop {
         if let Some(Ok(msg)) = framed_reader.next().await {
             if let Some(cstate) = cstate.as_ref() {
-                let action = cstate.lock().await.after_recv(&parent_addr, &msg).await;
+                let action = cstate.lock().await.after_recv(parent_addr, &msg).await;
                 match action {
                     ChannelAction::PASS => {}
                     ChannelAction::PANIC => {
@@ -272,10 +272,10 @@ async fn remote_parent_recv_subtask<M, AR, D, RX>(
                         break;
                     }
                 }
-                if row_q.send(R2PMsg::Msg(msg)).await.is_err() {
+                if row_q.send(R2PMsg::Msg(msg, parent_addr)).await.is_err() {
                     break;
                 }
-            } else if row_q.send(R2PMsg::Msg(msg)).await.is_err() {
+            } else if row_q.send(R2PMsg::Msg(msg, parent_addr)).await.is_err() {
                 break;
             }
         }
@@ -315,10 +315,10 @@ async fn local_parent_recv_subtask<M, AR>(
                         break;
                     }
                 }
-                if row_q.send(R2PMsg::Msg(msg.clone())).await.is_err() {
+                if row_q.send(R2PMsg::Msg(msg, parent_addr)).await.is_err() {
                     break;
                 }
-            } else if row_q.send(R2PMsg::Msg(msg.clone())).await.is_err() {
+            } else if row_q.send(R2PMsg::Msg(msg, parent_addr)).await.is_err() {
                 break;
             }
         }
