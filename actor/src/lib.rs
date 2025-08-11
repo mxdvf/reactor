@@ -34,6 +34,37 @@ pub trait Msg: Send + Sync + std::fmt::Debug + HasPriority + 'static + Clone {}
 pub type ActorAddrRef<'a> = Cow<'a, str>;
 pub type ActorAddr = String;
 
+pub struct ActorAddrs<'a>(Cow<'a, [ActorAddrRef<'a>]>);
+impl<'a> ActorAddrs<'a> {
+    pub fn borrowed(slice: &'a [ActorAddrRef<'a>]) -> Self {
+        ActorAddrs(Cow::Borrowed(slice))
+    }
+
+    pub fn owned(vec: Vec<ActorAddrRef<'a>>) -> Self {
+        ActorAddrs(Cow::Owned(vec))
+    }
+
+    pub fn from_strings<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let vec: Vec<Cow<'a, str>> = iter.into_iter().map(Cow::Owned).collect();
+        ActorAddrs(Cow::Owned(vec))
+    }
+
+    pub fn as_slice(&self) -> &[Cow<'a, str>] {
+        &self.0
+    }
+}
+
+impl<'a> std::ops::Deref for ActorAddrs<'a> {
+    type Target = [Cow<'a, str>];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[derive(Encode, Decode, Debug, Clone)]
 pub struct EmptyMsg;
 
@@ -217,7 +248,7 @@ pub trait ActorSend: Send + 'static {
     fn before_send<'a>(
         &'a mut self,
         output: &Self::OMsg,
-    ) -> impl std::future::Future<Output = Cow<'a, [ActorAddrRef<'a>]>> + Send;
+    ) -> impl std::future::Future<Output = ActorAddrs<'a>> + Send;
 }
 pub struct NoOpActorSend<M> {
     m: PhantomData<M>,
@@ -225,7 +256,7 @@ pub struct NoOpActorSend<M> {
 impl<M: Msg> ActorSend for NoOpActorSend<M> {
     type OMsg = M;
 
-    async fn before_send<'a>(&'a mut self, _output: &Self::OMsg) -> Cow<'a, [ActorAddrRef<'a>]> {
+    async fn before_send<'a>(&'a mut self, _output: &Self::OMsg) -> ActorAddrs<'a> {
         panic!("This Shouldn't be used")
     }
 }

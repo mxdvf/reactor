@@ -33,15 +33,14 @@ pub(crate) async fn tx<M, E, BS>(
 
     if let Some(mut before_send) = before_send {
         while let Some(m) = p_rx.recv().await {
-            let receivers: &[std::borrow::Cow<'_, str>] = &(*(before_send.before_send(&m).await));
+            let receivers: &[std::borrow::Cow<'_, str>] = &(before_send.before_send(&m).await);
             let num_receivers = receivers.len();
             if num_receivers == 0 {
                 continue;
             }
             for addr in &receivers[..num_receivers - 1] {
-                let addr: &str = &**addr;
                 send_msg(
-                    &my_addr,
+                    my_addr.as_ref(),
                     ask_receiver_to_adapt,
                     controller_tx.clone(),
                     codec.clone(),
@@ -52,18 +51,18 @@ pub(crate) async fn tx<M, E, BS>(
                 );
             }
             send_msg(
-                &my_addr,
+                my_addr.as_ref(),
                 ask_receiver_to_adapt,
                 controller_tx.clone(),
                 codec.clone(),
                 &mut addr_to_buff,
                 &mut sub_senders,
-                &*receivers[num_receivers - 1],
+                &receivers[num_receivers - 1],
                 m,
             );
         }
     } else {
-        while let Some(_) = p_rx.recv().await {}
+        while p_rx.recv().await.is_some() {}
     }
     sub_senders.abort_all();
     tracing::info!("[ACTOR][{}] Tx Ended", my_addr);
@@ -71,7 +70,7 @@ pub(crate) async fn tx<M, E, BS>(
 
 #[inline(always)]
 fn send_msg<M, E>(
-    my_addr: &std::borrow::Cow<'static, str>,
+    my_addr: &'static str,
     ask_receiver_to_adapt: bool,
     controller_tx: mpsc::Sender<ControlReq>,
     codec: E,
@@ -88,7 +87,7 @@ fn send_msg<M, E>(
     } else {
         let (tx, rx) = mpsc::unbounded_channel::<M>();
         sub_senders.spawn(sender_task(
-            my_addr.clone(),
+            my_addr.into(),
             ask_receiver_to_adapt,
             (*addr).to_string(),
             rx,
