@@ -10,7 +10,9 @@
 
 use clap::{Parser, command};
 use reactor_jobm::JobController;
-use reactor_jobm::placement::{LogicalOp, ManualPlacementManager, NodeInfo, PhysicalOp};
+use reactor_jobm::placement::{
+    BasePhysicalOp, LogicalOp, ManualPlacementManager, NodeInfo, PhysicalOp,
+};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
@@ -21,7 +23,7 @@ use tokio::signal;
 pub struct JobManifest {
     pub nodes: Vec<NodeInfo>,
     pub ops: Vec<LogicalOp>,
-    pub placement: HashMap<String, Vec<PhysicalOp>>,
+    pub placement: HashMap<String, Vec<BasePhysicalOp>>,
 }
 
 #[derive(Parser)]
@@ -37,8 +39,34 @@ async fn main() {
     let job_manifest: JobManifest = toml::from_str(&contents).expect("Toml Parse error");
 
     let ops = job_manifest.ops;
+
+    // loop and make "replica" number of placements in job_manifest.placement before passing into pm.
+
+    let mut actual_placements: HashMap<String, Vec<PhysicalOp>> = HashMap::new();
+    for (op, value) in job_manifest.placement.into_iter() {
+        let mut temp_vec: Vec<PhysicalOp> = Vec::new();
+        for base_physical_op in value {
+            match base_physical_op {
+                BasePhysicalOp::PhysicalOp(p) => {
+                    temp_vec.push(p);
+                }
+                BasePhysicalOp::ReplicaPhysicalOp(p) => {
+                    for i in 1..=p.replicas {
+                        temp_vec.reserve_exact(p.replicas as usize); // not sure if this will help much
+                        temp_vec.push(PhysicalOp {
+                            nodename: p.nodename.clone(),
+                            actor_name: format!("{}{}", p.actor_prefix, i),
+                            payload: p.payload.clone(),
+                        });
+                    }
+                }
+            }
+        }
+        actual_placements.insert(op.clone(), temp_vec);
+    }
+
     let pm = ManualPlacementManager {
-        map: job_manifest.placement,
+        map: actual_placements,
     };
     let mut jc = JobController::new(pm);
 
@@ -103,15 +131,15 @@ port = 3000
             placement: HashMap::from([
                 (
                     "pinger".into(),
-                    vec![PhysicalOp {
+                    vec![BasePhysicalOp::PhysicalOp(PhysicalOp {
                         nodename: "node1".into(),
                         actor_name: "pinger".into(),
                         payload: HashMap::from([("other".to_string(), json!("ponger"))]),
-                    }],
+                    })],
                 ),
                 (
                     "ponger".into(),
-                    vec![PhysicalOp {
+                    vec![BasePhysicalOp::PhysicalOp(PhysicalOp {
                         nodename: "node1".into(),
                         actor_name: "ponger".into(),
                         payload: HashMap::from([
@@ -128,7 +156,7 @@ port = 3000
                                 } ),
                             ),
                         ]),
-                    }],
+                    })],
                 ),
             ]),
             nodes: vec![NodeInfo {
