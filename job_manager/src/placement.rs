@@ -44,24 +44,9 @@ pub struct LogicalOp {
 pub struct PhysicalOp {
     pub nodename: String,
     pub actor_name: String,
+    pub replicas: Option<u32>,
     #[serde(flatten)]
     pub payload: HashMap<String, serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-pub struct ReplicaPhysicalOp {
-    pub nodename: String,
-    pub actor_prefix: String,
-    pub replicas: u32,
-    #[serde(flatten)]
-    pub payload: HashMap<String, serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum BasePhysicalOp {
-    PhysicalOp(PhysicalOp),
-    ReplicaPhysicalOp(ReplicaPhysicalOp),
 }
 
 /// Takes logical Op  and places it on single or multiple Nodes. Returns list of Physical operator where a logical operator is placed

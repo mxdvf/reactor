@@ -10,9 +10,7 @@
 
 use clap::{Parser, command};
 use reactor_jobm::JobController;
-use reactor_jobm::placement::{
-    BasePhysicalOp, LogicalOp, ManualPlacementManager, NodeInfo, PhysicalOp,
-};
+use reactor_jobm::placement::{LogicalOp, ManualPlacementManager, NodeInfo, PhysicalOp};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
@@ -23,7 +21,7 @@ use tokio::signal;
 pub struct JobManifest {
     pub nodes: Vec<NodeInfo>,
     pub ops: Vec<LogicalOp>,
-    pub placement: HashMap<String, Vec<BasePhysicalOp>>,
+    pub placement: HashMap<String, Vec<PhysicalOp>>,
 }
 
 #[derive(Parser)]
@@ -40,26 +38,21 @@ async fn main() {
 
     let ops = job_manifest.ops;
 
-    // loop and make "replica" number of placements in job_manifest.placement before passing into pm.
-
     let mut actual_placements: HashMap<String, Vec<PhysicalOp>> = HashMap::new();
     for (op, value) in job_manifest.placement.into_iter() {
         let mut temp_vec: Vec<PhysicalOp> = Vec::new();
-        for base_physical_op in value {
-            match base_physical_op {
-                BasePhysicalOp::PhysicalOp(p) => {
-                    temp_vec.push(p);
+        for phys_op in value {
+            if let Some(replicas) = phys_op.replicas {
+                for i in 1..=replicas {
+                    temp_vec.push(PhysicalOp {
+                        nodename: phys_op.nodename.clone(),
+                        actor_name: format!("{}{}", phys_op.actor_name, i),
+                        payload: phys_op.payload.clone(),
+                        replicas: None,
+                    });
                 }
-                BasePhysicalOp::ReplicaPhysicalOp(p) => {
-                    for i in 1..=p.replicas {
-                        temp_vec.reserve_exact(p.replicas as usize); // not sure if this will help much
-                        temp_vec.push(PhysicalOp {
-                            nodename: p.nodename.clone(),
-                            actor_name: format!("{}{}", p.actor_prefix, i),
-                            payload: p.payload.clone(),
-                        });
-                    }
-                }
+            } else {
+                temp_vec.push(phys_op);
             }
         }
         actual_placements.insert(op.clone(), temp_vec);
@@ -111,6 +104,7 @@ port = 3000
   [[placement.ponger]]
   nodename = "node1"
   actor_name = "ponger"
+  replicas = 3
   connection = { hashed = ["addr1", "addr2"] }
   op_args = { height = 1080, width = 1920, source = { type = "rtsp", url = "rtsp://example.com/stream" } }
 "#;
@@ -131,15 +125,16 @@ port = 3000
             placement: HashMap::from([
                 (
                     "pinger".into(),
-                    vec![BasePhysicalOp::PhysicalOp(PhysicalOp {
+                    vec![PhysicalOp {
                         nodename: "node1".into(),
                         actor_name: "pinger".into(),
                         payload: HashMap::from([("other".to_string(), json!("ponger"))]),
-                    })],
+                        replicas: None,
+                    }],
                 ),
                 (
                     "ponger".into(),
-                    vec![BasePhysicalOp::PhysicalOp(PhysicalOp {
+                    vec![PhysicalOp {
                         nodename: "node1".into(),
                         actor_name: "ponger".into(),
                         payload: HashMap::from([
@@ -156,7 +151,8 @@ port = 3000
                                 } ),
                             ),
                         ]),
-                    })],
+                        replicas: Some(3),
+                    }],
                 ),
             ]),
             nodes: vec![NodeInfo {
