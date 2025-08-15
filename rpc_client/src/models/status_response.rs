@@ -12,21 +12,15 @@ use crate::models;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
-pub struct RemoteActorInfo {
-    #[serde(rename = "hostname")]
-    pub hostname: String,
-    #[serde(rename = "name")]
-    pub name: String,
-    #[serde(rename = "port")]
-    pub port: i32,
+pub struct StatusResponse {
+    #[serde(rename = "actors")]
+    pub actors: Vec<String>,
 }
 
-impl RemoteActorInfo {
-    pub fn new(hostname: String, name: String, port: i32) -> RemoteActorInfo {
-        RemoteActorInfo {
-            hostname,
-            name,
-            port,
+impl StatusResponse {
+    pub fn new(actors: Vec<String>) -> StatusResponse {
+        StatusResponse {
+            actors,
         }
     }
 }
