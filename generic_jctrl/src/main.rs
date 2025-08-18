@@ -37,30 +37,7 @@ async fn main() {
     let job_manifest: JobManifest = toml::from_str(&contents).expect("Toml Parse error");
 
     let ops = job_manifest.ops;
-
-    let mut actual_placements: HashMap<String, Vec<PhysicalOp>> = HashMap::new();
-    for (op, value) in job_manifest.placement.into_iter() {
-        let mut temp_vec: Vec<PhysicalOp> = Vec::new();
-        for phys_op in value {
-            if let Some(replicas) = phys_op.replicas {
-                for i in 1..=replicas {
-                    temp_vec.push(PhysicalOp {
-                        nodename: phys_op.nodename.clone(),
-                        actor_name: format!("{}{}", phys_op.actor_name, i),
-                        payload: phys_op.payload.clone(),
-                        replicas: None,
-                    });
-                }
-            } else {
-                temp_vec.push(phys_op);
-            }
-        }
-        actual_placements.insert(op.clone(), temp_vec);
-    }
-
-    let pm = ManualPlacementManager {
-        map: actual_placements,
-    };
+    let pm = ManualPlacementManager::new(job_manifest.placement);
     let mut jc = JobController::new(pm);
 
     for node in job_manifest.nodes {
@@ -163,5 +140,21 @@ port = 3000
         };
 
         assert_eq!(parsed, expected);
+        let pm = ManualPlacementManager::new(parsed.placement);
+
+        let pinger_list = pm.map.get("pinger").unwrap();
+        assert_eq!(pinger_list.len(), 1);
+        assert_eq!(pinger_list[0].actor_name, "pinger");
+
+        let ponger_list = pm.map.get("ponger").unwrap();
+        assert_eq!(ponger_list.len(), 3);
+        assert_eq!(
+            ponger_list
+                .iter()
+                .map(|p| p.actor_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["ponger1", "ponger2", "ponger3"]
+        );
+        assert!(ponger_list.iter().all(|p| p.nodename == "node1"));
     }
 }
