@@ -37,9 +37,7 @@ async fn main() {
     let job_manifest: JobManifest = toml::from_str(&contents).expect("Toml Parse error");
 
     let ops = job_manifest.ops;
-    let pm = ManualPlacementManager {
-        map: job_manifest.placement,
-    };
+    let pm = ManualPlacementManager::new(job_manifest.placement);
     let mut jc = JobController::new(pm);
 
     for node in job_manifest.nodes {
@@ -83,6 +81,7 @@ port = 3000
   [[placement.ponger]]
   nodename = "node1"
   actor_name = "ponger"
+  replicas = 3
   connection = { hashed = ["addr1", "addr2"] }
   op_args = { height = 1080, width = 1920, source = { type = "rtsp", url = "rtsp://example.com/stream" } }
 "#;
@@ -107,6 +106,7 @@ port = 3000
                         nodename: "node1".into(),
                         actor_name: "pinger".into(),
                         payload: HashMap::from([("other".to_string(), json!("ponger"))]),
+                        replicas: None,
                     }],
                 ),
                 (
@@ -128,6 +128,7 @@ port = 3000
                                 } ),
                             ),
                         ]),
+                        replicas: Some(3),
                     }],
                 ),
             ]),
@@ -139,5 +140,21 @@ port = 3000
         };
 
         assert_eq!(parsed, expected);
+        let pm = ManualPlacementManager::new(parsed.placement);
+
+        let pinger_list = pm.map.get("pinger").unwrap();
+        assert_eq!(pinger_list.len(), 1);
+        assert_eq!(pinger_list[0].actor_name, "pinger");
+
+        let ponger_list = pm.map.get("ponger").unwrap();
+        assert_eq!(ponger_list.len(), 3);
+        assert_eq!(
+            ponger_list
+                .iter()
+                .map(|p| p.actor_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["ponger1", "ponger2", "ponger3"]
+        );
+        assert!(ponger_list.iter().all(|p| p.nodename == "node1"));
     }
 }

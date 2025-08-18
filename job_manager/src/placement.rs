@@ -44,6 +44,7 @@ pub struct LogicalOp {
 pub struct PhysicalOp {
     pub nodename: String,
     pub actor_name: String,
+    pub replicas: Option<u32>,
     #[serde(flatten)]
     pub payload: HashMap<String, serde_json::Value>,
 }
@@ -56,6 +57,34 @@ pub trait PlacementManager {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct ManualPlacementManager {
     pub map: HashMap<String, Vec<PhysicalOp>>,
+}
+
+impl ManualPlacementManager {
+    pub fn new(map: HashMap<String, Vec<PhysicalOp>>) -> Self {
+        let mut actual_placements: HashMap<String, Vec<PhysicalOp>> = HashMap::new();
+        for (op, value) in map.into_iter() {
+            let mut temp_vec: Vec<PhysicalOp> = Vec::new();
+            for phys_op in value {
+                if let Some(replicas) = phys_op.replicas {
+                    for i in 1..=replicas {
+                        temp_vec.push(PhysicalOp {
+                            nodename: phys_op.nodename.clone(),
+                            actor_name: format!("{}{}", phys_op.actor_name, i),
+                            payload: phys_op.payload.clone(),
+                            replicas: None,
+                        });
+                    }
+                } else {
+                    temp_vec.push(phys_op);
+                }
+            }
+            actual_placements.insert(op.clone(), temp_vec);
+        }
+
+        Self {
+            map: actual_placements,
+        }
+    }
 }
 
 impl PlacementManager for ManualPlacementManager {
