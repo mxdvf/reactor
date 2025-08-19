@@ -176,32 +176,44 @@ async fn sender_task<M, E>(
         log::info!("[ACTOR] SubTx Ended");
     }
 
-    let (c_tx, c_rx) = tokio::sync::oneshot::channel();
-    controller_tx
-        .send(ControlReq::Resolve {
-            resp_tx: c_tx,
-            addr: send_addr,
-        })
-        .await
-        .unwrap();
+    loop {
+        let (c_tx, c_rx) = tokio::sync::oneshot::channel();
+        controller_tx
+            .send(ControlReq::Resolve {
+                resp_tx: c_tx,
+                addr: send_addr.clone(), // to satisfy borrow checker, is it necessary?
+            })
+            .await
+            .unwrap();
 
-    match c_rx.await.unwrap() {
-        Connection::Remote(socket_addr) => loop {
-            match TcpStream::connect(socket_addr).await {
-                Ok(s) => {
-                    let (_, tx) = s.into_split();
-                    break remote_sender(my_addr, ask_receiver_to_adapt, tx, rx, encoder).await;
-                }
-                Err(_) => {
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                    todo!();
-                }
+        match c_rx.await.unwrap() {
+            Connection::Remote(socket_addr) => {
+                let tx = loop {
+                    match TcpStream::connect(socket_addr).await {
+                        Ok(s) => {
+                            let (_, tx) = s.into_split();
+                            break tx;
+                        }
+                        Err(_) => {
+                            tokio::time::sleep(Duration::from_millis(500)).await;
+                            todo!();
+                        }
+                    }
+                };
+
+                remote_sender(my_addr, ask_receiver_to_adapt, tx, rx, encoder).await;
+                break;
             }
-        },
-        Connection::Local(write_half) => {
-            local_sender(my_addr, ask_receiver_to_adapt, write_half, rx).await;
-        }
-    };
+            Connection::Local(write_half) => {
+                local_sender(my_addr, ask_receiver_to_adapt, write_half, rx).await;
+                break;
+            }
+            Connection::Failed(err) => {
+                log::error!("[ACTOR] Failed to connect to {}: {}", send_addr, err);
+                continue;
+            }
+        };
+    }
 }
 
 async fn send_remote_handshake(

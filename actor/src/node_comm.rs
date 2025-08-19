@@ -12,6 +12,7 @@ pub type LocalChannelRx = mpsc::Receiver<Box<dyn Any + Send>>;
 pub enum Connection {
     Remote(SocketAddr),
     Local(LocalChannelTx),
+    Failed(String),
 }
 
 pub enum ControlReq {

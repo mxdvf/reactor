@@ -257,7 +257,7 @@ async fn handle_actor_req(
                     .unwrap();
             } else {
                 error!("Couldn't Resolve {}", addr);
-                panic!("Couldn't Resolve {}", addr);
+                let _ = resp_tx.send(Connection::Failed(format!("Couldn't resolve {}", addr)));
             }
         }
     }
