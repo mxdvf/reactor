@@ -8,7 +8,7 @@ use tokio::sync::{
     mpsc::{self, Sender, UnboundedReceiver, channel, unbounded_channel},
     oneshot,
 };
-use tracing::{Level, error, event};
+use tracing::{Level, error, event, warn};
 use tracing_shared::SharedLogger;
 // use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -256,8 +256,8 @@ async fn handle_actor_req(
                     .send(Connection::Remote(local.remote_actor_addr))
                     .unwrap();
             } else {
-                error!("Couldn't Resolve {}", addr);
-                panic!("Couldn't Resolve {}", addr);
+                warn!("Couldn't Resolve {}", addr);
+                let _ = resp_tx.send(Connection::CouldntResolve);
             }
         }
     }

@@ -16,7 +16,6 @@ use tokio_util::codec::{Decoder, Encoder};
 pub use tracing_shared::setup_shared_logger_ref;
 
 pub mod codec;
-pub mod common;
 pub mod err;
 mod node_comm;
 mod reactor_channel;
