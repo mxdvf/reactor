@@ -208,8 +208,9 @@ async fn sender_task<M, E>(
                 local_sender(my_addr, ask_receiver_to_adapt, write_half, rx).await;
                 break;
             }
-            Connection::Failed(err) => {
-                log::error!("[ACTOR] Failed to connect to {}: {}", send_addr, err);
+            Connection::CouldntResolve => {
+                log::warn!("[ACTOR] Failed to resolve {}", send_addr);
+                tokio::time::sleep(Duration::from_millis(100)).await;
                 continue;
             }
         };
