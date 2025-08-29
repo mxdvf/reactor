@@ -23,7 +23,7 @@ jobs:
 
       - name: Build docs with index page
         run: |
-          RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --no-deps --workspace --all-features
+          RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --no-deps --workspace
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
