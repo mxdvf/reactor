@@ -15,10 +15,15 @@ use serde::{Deserialize, Serialize};
 pub struct StatusResponse {
     #[serde(rename = "actors")]
     pub actors: Vec<String>,
+    #[serde(rename = "loaded_libs")]
+    pub loaded_libs: Vec<String>,
 }
 
 impl StatusResponse {
-    pub fn new(actors: Vec<String>) -> StatusResponse {
-        StatusResponse { actors }
+    pub fn new(actors: Vec<String>, loaded_libs: Vec<String>) -> StatusResponse {
+        StatusResponse {
+            actors,
+            loaded_libs,
+        }
     }
 }
