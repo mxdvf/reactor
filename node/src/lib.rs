@@ -45,6 +45,12 @@ pub(crate) struct SpawnResult {
 #[derive(Debug)]
 pub(crate) struct RegisterResult {}
 
+#[derive(Debug)]
+pub(crate) struct NodeStatus {
+    actors: Vec<String>,
+    loaded_libs: Vec<String>,
+}
+
 /// Global Controller
 pub(crate) enum JobControllerReq {
     #[cfg(feature = "dynop")]
@@ -65,6 +71,9 @@ pub(crate) enum JobControllerReq {
         sock_addr: SocketAddr,
     },
     StopAllActors,
+    GetStatus {
+        resp_tx: oneshot::Sender<NodeStatus>,
+    },
 }
 
 struct LocalActor {
@@ -228,6 +237,15 @@ async fn handle_job_req(
                 event!(target: "stopping actor", Level::INFO, name);
                 actor.handle.send(ControlInst::Stop).await.unwrap();
             }
+        }
+        JobControllerReq::GetStatus { resp_tx } => {
+            event!(target: "serving get status", Level::INFO, total_actors=local_actors.len());
+            resp_tx
+                .send(NodeStatus {
+                    actors: local_actors.keys().cloned().collect(),
+                    loaded_libs: op_lib.lib_names(),
+                })
+                .unwrap();
         }
     }
 }

@@ -5,6 +5,7 @@ All URIs are relative to *http://localhost*
 Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**actor_added**](DefaultApi.md#actor_added) | **POST** /actor_added | 
+[**get_status**](DefaultApi.md#get_status) | **GET** /status | 
 [**register_lib**](DefaultApi.md#register_lib) | **POST** /register_lib | 
 [**start_actor**](DefaultApi.md#start_actor) | **POST** /start_actor | 
 [**stop_all_actors**](DefaultApi.md#stop_all_actors) | **POST** /stop_all_actors | 
@@ -35,6 +36,31 @@ No authorization required
 
 - **Content-Type**: application/json
 - **Accept**: Not defined
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+
+## get_status
+
+> models::StatusResponse get_status()
+
+
+### Parameters
+
+This endpoint does not need any parameter.
+
+### Return type
+
+[**models::StatusResponse**](StatusResponse.md)
+
+### Authorization
+
+No authorization required
+
+### HTTP request headers
+
+- **Content-Type**: Not defined
+- **Accept**: application/json
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 

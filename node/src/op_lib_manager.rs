@@ -21,4 +21,8 @@ impl OpLibrary {
     pub(crate) fn num_libs(&self) -> usize {
         self.container.len()
     }
+
+    pub(crate) fn lib_names(&self) -> Vec<LibName> {
+        self.container.keys().cloned().collect()
+    }
 }
