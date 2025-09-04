@@ -35,10 +35,11 @@ function App() {
 
         try {
           const res = await api.getStatus();
+          console.log(res.data.loaded_libs);
 
           const newData: NodeData = {
             actors: Array.isArray(res.data.actors) ? res.data.actors : [],
-            loaded_libs: Array.isArray(res.data.loaded_libs) ? res.data.loaded_libs : [],
+            loaded_libs: res.data.loaded_libs,
             error: null,
             latencyMs: null,
             lastUpdated: new Date().toISOString(),
@@ -47,7 +48,7 @@ function App() {
         } catch (error: any) {
           const newData: NodeData = {
             actors: [],
-            loaded_libs: [],
+            loaded_libs: {},
             error: error.message ?? "Unknown error",
             latencyMs: null,
             lastUpdated: new Date().toISOString(),
@@ -86,7 +87,6 @@ function App() {
     [nodes],
   );
 
-  console.log(nodes);
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
       <SidebarProvider
@@ -105,6 +105,7 @@ function App() {
             setPollingEnabled={setPollingEnabled}
             pollOnce={pollOnce}
             POLL_MS={POLL_MS}
+            nodes={nodes}
             lastSweep={lastSweep}
             setNodes={setNodes}
           />
