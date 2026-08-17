@@ -52,13 +52,22 @@ pub struct EncodeError<M> {
     pub msg: Option<M>,
 }
 
-pub trait ErrWithMsg<M> {
+pub trait ErrWithMsg<M>: std::fmt::Debug {
     fn into_inner(self) -> Option<M>;
 }
 
 impl<M> ErrWithMsg<M> for EncodeError<M> {
     fn into_inner(self) -> Option<M> {
         self.msg
+    }
+}
+
+impl<M> std::fmt::Debug for EncodeError<M> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EncodeError")
+            .field("io_error", &self.io_error)
+            .field("msg", &self.msg.as_ref().map(|_| "<message>"))
+            .finish()
     }
 }
 

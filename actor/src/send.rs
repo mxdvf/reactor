@@ -153,6 +153,7 @@ async fn sender_task<M, E>(
     async fn remote_sender<C, M>(
         my_addr: &'static str,
         ask_receiver_to_adapt: bool,
+        send_addr: ActorAddr,
         mut tx: impl AsyncWrite + Unpin,
         mut rx: mpsc::UnboundedReceiver<M>,
         encoder: C,
@@ -171,7 +172,20 @@ async fn sender_task<M, E>(
             let Err(e) = framed_writer.send(msg).await else {
                 continue;
             };
-            let mut failed_msg = e.into_inner().unwrap();
+            log::error!(
+                "[ACTOR] {} failed sending to {}: {:#?}",
+                my_addr,
+                send_addr,
+                e
+            );
+            let Some(mut failed_msg) = e.into_inner() else {
+                log::error!(
+                    "[ACTOR] {} send error to {} had no recoverable message",
+                    my_addr,
+                    send_addr
+                );
+                break;
+            };
             match on_send_failure {
                 SendErrAction::Drop => {
                     log::warn!("[ACTOR] {} Failed to send message, dropping", my_addr);
@@ -304,6 +318,7 @@ async fn sender_task<M, E>(
                 remote_sender(
                     my_addr,
                     ask_receiver_to_adapt,
+                    socket_addr.to_string(),
                     tx,
                     rx,
                     encoder,
