@@ -244,7 +244,7 @@ where
         .bind(&SocketAddr::from((Ipv4Addr::new(0, 0, 0, 0), port)).into())
         .map_err(|e| ActorError::RecieverErr(RecieverErr::TcpStartErr(e)))?;
     socket
-        .listen(128)
+        .listen(1024)
         .map_err(|e| ActorError::RecieverErr(RecieverErr::TcpStartErr(e)))?;
     socket
         .set_nonblocking(true)
@@ -263,41 +263,72 @@ where
                 let (socket, _) = accept_result.map_err(|e| {
                     ActorError::RecieverErr(RecieverErr::TcpStartErr(e))
                 })?;
+
                 let (mut rx, _) = socket.into_split();
-                // Whenever an actor connects it first needs to tell us its
-                // address, and message type.
-                let (remote_addr, msg_type) = recv_remote_handshake(&mut rx).await;
 
-                match (sub_decoders, msg_type){
-                    (Some(sub_decoders), Some(msg_type)) => {
-                        let decoder: Box<dyn tokio_util::codec::Decoder<Item = M, Error = std::io::Error> + Sync + Send> = (sub_decoders(&msg_type).unwrap().decoder_cons)();
-                        let boxed_decoder = BoxedDecoder(decoder);
-                        let (throttle_tx, throttle_rx) = watch::channel((0,0));
-                        throttle_signals.lock().await.insert(remote_addr.clone(), throttle_tx);
-                        remote_recv_set.spawn(remote_parent_recv_subtask(
-                            remote_addr,
-                            p_tx.clone(),
-                            cstate.clone(),
-                            FramedRead::new(rx, boxed_decoder),
-                            throttle_rx
-                        ));
-                    },
-                    (None, Some(_)) => {
-                        panic!("I dont know how to decode your messages");
+                // Clone everything this connection task needs.
+                let p_tx = p_tx.clone();
+                let cstate = cstate.clone();
+                let master_decoder = master_decoder.clone();
+                let throttle_signals = throttle_signals.clone();
+
+                remote_recv_set.spawn(async move {
+                    // Handshake now happens independently for this connection.
+                    // The main listener can immediately accept the next TCP connection.
+                    let (remote_addr, msg_type) = recv_remote_handshake(&mut rx).await;
+
+                    match (sub_decoders, msg_type) {
+                        (Some(sub_decoders), Some(msg_type)) => {
+                            let decoder: Box<
+                                dyn tokio_util::codec::Decoder<
+                                        Item = M,
+                                        Error = std::io::Error,
+                                    > + Sync
+                                    + Send,
+                            > = (sub_decoders(&msg_type).unwrap().decoder_cons)();
+
+                            let boxed_decoder = BoxedDecoder(decoder);
+
+                            let (throttle_tx, throttle_rx) = watch::channel((0, 0));
+
+                            throttle_signals
+                                .lock()
+                                .await
+                                .insert(remote_addr.clone(), throttle_tx);
+
+                            remote_parent_recv_subtask(
+                                remote_addr,
+                                p_tx,
+                                cstate,
+                                FramedRead::new(rx, boxed_decoder),
+                                throttle_rx,
+                            )
+                            .await;
+                        }
+
+                        (None, Some(_)) => {
+                            panic!("I dont know how to decode your messages");
+                        }
+
+                        _ => {
+                            let (throttle_tx, throttle_rx) = watch::channel((0, 0));
+
+                            throttle_signals
+                                .lock()
+                                .await
+                                .insert(remote_addr.clone(), throttle_tx);
+
+                            remote_parent_recv_subtask(
+                                remote_addr,
+                                p_tx,
+                                cstate,
+                                FramedRead::new(rx, master_decoder),
+                                throttle_rx,
+                            )
+                            .await;
+                        }
                     }
-                    _ => {
-                        let (throttle_tx, throttle_rx) = watch::channel((0,0));
-                        throttle_signals.lock().await.insert(remote_addr.clone(), throttle_tx);
-                        remote_recv_set.spawn(remote_parent_recv_subtask(
-                            remote_addr,
-                            p_tx.clone(),
-                            cstate.clone(),
-                            FramedRead::new(rx, master_decoder.clone()),
-                            throttle_rx
-                        ));
-
-                    },
-                }
+                });
             }
         }
     }
