@@ -308,9 +308,16 @@ async fn sender_task<M, E>(
                             let (_, tx) = s.into_split();
                             break tx;
                         }
-                        Err(_) => {
+                        Err(e) => {
+                            log::warn!(
+                                "[ACTOR] {} failed to connect to {} at {}: {}; retrying",
+                                my_addr,
+                                send_addr,
+                                socket_addr,
+                                e
+                            );
                             tokio::time::sleep(Duration::from_millis(500)).await;
-                            todo!();
+                            continue;
                         }
                     }
                 };

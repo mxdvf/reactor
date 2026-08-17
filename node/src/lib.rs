@@ -241,11 +241,11 @@ async fn handle_job_req(
                     ),
                     payload,
                 );
-                resp_tx.send(Some(SpawnResult { port })).unwrap();
                 control_tx
                     .send(ControlInst::StartTcpRecv(port))
                     .await
                     .unwrap();
+                resp_tx.send(Some(SpawnResult { port })).unwrap();
                 info!(target: "actor spawned", port);
                 local_actors.insert(addr, LocalActor { handle: control_tx });
             }
